@@ -144,7 +144,7 @@ export function AddWebsiteDialog({ trigger }: { trigger?: React.ReactNode }) {
     const id = result.data!.id;
     const name = values.name.trim();
 
-    if (auditNow) void runAudit(id);
+    if (auditNow) void runAudit(id, state.settings.defaultDevice);
 
     toast({
       tone: "success",

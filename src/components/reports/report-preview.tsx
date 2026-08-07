@@ -21,7 +21,7 @@ import {
   SCORE_LABELS,
   scoreBand,
 } from "@/lib/scores";
-import { formatDate, formatPercent, displayUrl } from "@/lib/format";
+import { formatDate, formatMs, displayUrl } from "@/lib/format";
 import type { Issue, ScoreKey, Scores, TrendPoint, Website } from "@/types";
 
 export interface ReportData {
@@ -35,7 +35,10 @@ export interface ReportData {
   previousScores: Scores;
   health: number;
   previousHealth: number;
-  uptime: number;
+  /** Median measured server response time across the scope, in ms. */
+  medianTtfbMs: number | null;
+  /** How many sites in scope have real-user data from Google. */
+  fieldDataCount: number;
   trend: TrendPoint[];
   websites: Website[];
   websiteIssueCounts: Record<string, number>;
@@ -125,15 +128,16 @@ export function ReportPreview({ data }: { data: ReportData }) {
                 : healthDelta > 0
                   ? `up ${healthDelta} points over the reporting period`
                   : `down ${Math.abs(healthDelta)} points over the reporting period`}
-              . Availability held at {formatPercent(data.uptime, 2)} with{" "}
-              {data.auditsRun} audit{data.auditsRun === 1 ? "" : "s"} completed.
+              , across {data.auditsRun} audit
+              {data.auditsRun === 1 ? "" : "s"} measured by Google PageSpeed
+              Insights.
             </p>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Metric label="Health" value={String(data.health)} tone={BAND_HEX[band]}>
                 <Delta value={healthDelta} suffix=" pts" showZero={false} />
               </Metric>
-              <Metric label="Uptime" value={formatPercent(data.uptime, 2)} />
+              <Metric label="Server response" value={formatMs(data.medianTtfbMs)} />
               <Metric label="Issues resolved" value={String(data.issuesResolved)} />
               <Metric label="New findings" value={String(data.issuesOpened)} />
             </div>
@@ -267,7 +271,7 @@ export function ReportPreview({ data }: { data: ReportData }) {
                     Health
                   </th>
                   <th className="pb-2 text-right text-[11px] font-semibold tracking-wide text-subtle-foreground uppercase">
-                    Uptime
+                    Server response
                   </th>
                   <th className="pb-2 text-right text-[11px] font-semibold tracking-wide text-subtle-foreground uppercase">
                     Open issues
@@ -296,7 +300,7 @@ export function ReportPreview({ data }: { data: ReportData }) {
                         {website.lastAuditAt ? website.healthScore : "—"}
                       </td>
                       <td className="py-2.5 text-right font-mono text-muted-foreground tabular-nums">
-                        {formatPercent(website.uptime30d, 2)}
+                        {formatMs(website.ttfbMs)}
                       </td>
                       <td className="py-2.5 text-right font-mono text-muted-foreground tabular-nums">
                         {data.websiteIssueCounts[website.id] ?? 0}

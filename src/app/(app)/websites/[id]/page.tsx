@@ -44,7 +44,8 @@ import {
 } from "@/components/dashboard/panels";
 import { RunAuditButton } from "@/components/dashboard/run-audit-button";
 import { CategoryFindings } from "@/components/websites/category-findings";
-import { UptimeChart } from "@/components/charts/uptime-chart";
+import { FieldDataPanel } from "@/components/audits/field-data-panel";
+import { AuditFailureNotice } from "@/components/audits/audit-failure-notice";
 import { IssueDetailSheet } from "@/components/issues/issue-detail-sheet";
 import { useAppStore } from "@/lib/store/app-store";
 import {
@@ -56,7 +57,7 @@ import { SCORE_LABELS, isActive, sortBySeverity } from "@/lib/scores";
 import {
   displayUrl,
   formatDate,
-  formatPercent,
+  formatMs,
   formatRelative,
 } from "@/lib/format";
 import type { Issue, IssueCategory, ScoreKey } from "@/types";
@@ -96,11 +97,6 @@ export default function WebsiteDetailPage({
     () => (website ? (state.trends[website.id] ?? []) : []),
     [state.trends, website],
   );
-  const uptime = React.useMemo(
-    () => (website ? (state.uptime[website.id] ?? []) : []),
-    [state.uptime, website],
-  );
-
   const breakdown = React.useMemo(
     () => (website ? categoryBreakdown(website.scores, trend, issues) : []),
     [website, trend, issues],
@@ -224,6 +220,8 @@ export default function WebsiteDetailPage({
         </div>
       </PageHeader>
 
+      <AuditFailureNotice website={website} />
+
       <section
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
         aria-label="Overview metrics"
@@ -243,32 +241,38 @@ export default function WebsiteDetailPage({
           }
         />
         <StatTile
-          label="Uptime (30 days)"
-          value={formatPercent(website.uptime30d, 2)}
+          label="Server response"
+          value={formatMs(website.ttfbMs)}
           icon={Server}
           valueClassName={
-            website.uptime30d >= 99.9
-              ? "text-success"
-              : website.uptime30d >= 99
-                ? "text-warning"
-                : "text-danger"
+            website.ttfbMs === null
+              ? undefined
+              : website.ttfbMs <= 800
+                ? "text-success"
+                : website.ttfbMs <= 1800
+                  ? "text-warning"
+                  : "text-danger"
           }
           footer={
             <span className="text-subtle-foreground">
-              {uptime.reduce((sum, day) => sum + day.incidents, 0)} incidents
+              Measured (lab), latest run
             </span>
           }
         />
         <StatTile
-          label="Avg. response"
-          value={website.avgResponseMs ? `${website.avgResponseMs}ms` : "—"}
+          label="Real-user LCP"
+          value={website.field?.lcpMs != null ? formatMs(website.field.lcpMs) : "—"}
           icon={Timer}
           footer={
-            <span className="text-subtle-foreground">Origin, 30-day mean</span>
+            <span className="text-subtle-foreground">
+              {website.field
+                ? `CrUX field data (${website.field.scope})`
+                : "No field data from Google"}
+            </span>
           }
         />
         <StatTile
-          label="Open issues"
+          label="Open findings"
           value={openIssues.length}
           icon={Bug}
           footer={
@@ -312,18 +316,22 @@ export default function WebsiteDetailPage({
 
             <Card className="flex flex-col">
               <CardToolbar
-                title="Availability"
-                description="Daily uptime, last 30 days"
+                title="Core Web Vitals"
+                description="Lab measurements against real-user data"
                 action={<Activity className="size-4 text-subtle-foreground" />}
               />
               <CardContent className="flex-1">
-                {uptime.length > 0 ? (
-                  <UptimeChart data={uptime} height={220} />
+                {latestCompleted ? (
+                  <FieldDataPanel
+                    lab={latestCompleted.vitals}
+                    labTtfbMs={latestCompleted.labTtfbMs}
+                    field={latestCompleted.field}
+                  />
                 ) : (
                   <EmptyState
                     icon={Server}
-                    title="No availability data"
-                    description="Uptime is recorded from the first audit onwards."
+                    title="No metrics yet"
+                    description="Run an audit to collect Core Web Vitals for this site."
                   />
                 )}
               </CardContent>

@@ -1,6 +1,5 @@
 import { healthScore } from "@/lib/scores";
 import { initialsFrom } from "@/lib/format";
-import { responseTimeFor, uptimeForWebsite, uptimePercent } from "@/lib/derive/uptime";
 import type {
   AuditRow,
   IssueRow,
@@ -10,13 +9,17 @@ import type {
 } from "@/types/database";
 import type {
   Audit,
+  CruxCategory,
+  FieldVitals,
   Issue,
   Scores,
   Settings,
-  UptimeDay,
   WebVitals,
   Website,
 } from "@/types";
+
+/** Audit rows are listed without the large `raw_response` column. */
+export type AuditListRow = Omit<AuditRow, "raw_response">;
 
 const EMPTY_SCORES: Scores = {
   performance: 0,
@@ -36,20 +39,63 @@ const EMPTY_VITALS: WebVitals = {
 };
 
 /**
- * Database rows use snake_case and nullable score columns; the UI was built
- * against camelCase domain objects with non-null scores. Mapping here means not
- * a single component from phase 1 had to change to read real data.
+ * Database rows use snake_case and nullable columns; the UI reads camelCase
+ * domain objects. Mapping here keeps the component layer unchanged.
+ *
+ * Nullability is preserved deliberately. A metric Google did not report stays
+ * null all the way to the screen, where it renders as "not reported" — turning
+ * it into 0 here would be indistinguishable from a real measurement of zero.
  */
-export function toAudit(row: AuditRow): Audit {
-  const scores: Scores =
-    row.status === "completed"
-      ? {
-          performance: row.performance_score ?? 0,
-          seo: row.seo_score ?? 0,
-          accessibility: row.accessibility_score ?? 0,
-          bestPractices: row.best_practices_score ?? 0,
-        }
-      : EMPTY_SCORES;
+/**
+ * Published Core Web Vitals thresholds. Only the overall CrUX category is
+ * stored, so per-metric bands are re-derived from the stored percentiles using
+ * Google's own cut-offs rather than being guessed.
+ */
+function band(
+  value: number | null,
+  good: number,
+  poor: number,
+): CruxCategory | null {
+  if (value === null) return null;
+  if (value <= good) return "FAST";
+  if (value <= poor) return "AVERAGE";
+  return "SLOW";
+}
+
+function fieldFrom(row: AuditListRow): FieldVitals | null {
+  if (!row.field_data_available) return null;
+
+  const cls = row.field_cls === null ? null : Number(row.field_cls);
+
+  return {
+    scope: row.field_scope,
+    overallCategory: row.field_overall_category,
+    lcpMs: row.field_lcp_ms,
+    inpMs: row.field_inp_ms,
+    cls,
+    fcpMs: row.field_fcp_ms,
+    ttfbMs: row.field_ttfb_ms,
+    categories: {
+      lcp: band(row.field_lcp_ms, 2500, 4000),
+      inp: band(row.field_inp_ms, 200, 500),
+      cls: band(cls, 0.1, 0.25),
+      fcp: band(row.field_fcp_ms, 1800, 3000),
+      ttfb: band(row.field_ttfb_ms, 800, 1800),
+    },
+  };
+}
+
+export function toAudit(row: AuditListRow): Audit {
+  const completed = row.status === "completed";
+
+  const scores: Scores = completed
+    ? {
+        performance: row.performance_score ?? 0,
+        seo: row.seo_score ?? 0,
+        accessibility: row.accessibility_score ?? 0,
+        bestPractices: row.best_practices_score ?? 0,
+      }
+    : EMPTY_SCORES;
 
   return {
     id: row.id,
@@ -57,26 +103,33 @@ export function toAudit(row: AuditRow): Audit {
     status: row.status,
     trigger: row.trigger,
     device: row.device,
+    provider: row.provider,
     startedAt: row.started_at,
     durationMs: row.duration_ms,
     scores,
     healthScore: row.health_score ?? 0,
-    vitals:
-      row.status === "completed"
-        ? {
-            lcp: Number(row.lcp ?? 0),
-            fcp: Number(row.fcp ?? 0),
-            cls: Number(row.cls ?? 0),
-            inp: row.inp ?? 0,
-            ttfb: row.ttfb ?? 0,
-            tbt: row.tbt ?? 0,
-            speedIndex: Number(row.speed_index ?? 0),
-          }
-        : EMPTY_VITALS,
+    vitals: completed
+      ? {
+          lcp: Number(row.lcp ?? 0),
+          fcp: Number(row.fcp ?? 0),
+          cls: Number(row.cls ?? 0),
+          inp: row.inp ?? 0,
+          ttfb: row.ttfb ?? 0,
+          tbt: row.tbt ?? 0,
+          speedIndex: Number(row.speed_index ?? 0),
+        }
+      : EMPTY_VITALS,
+    field: fieldFrom(row),
+    labTtfbMs: completed ? row.ttfb : null,
+    requestedUrl: row.requested_url,
+    finalUrl: row.final_url,
+    lighthouseVersion: row.lighthouse_version,
+    analysedAt: row.analysed_at,
     issuesFound: row.issues_found,
     passedChecks: row.passed_checks,
     totalChecks: row.total_checks,
     failureReason: row.failure_reason ?? undefined,
+    errorCode: row.error_code ?? undefined,
   };
 }
 
@@ -91,9 +144,13 @@ export function toIssue(row: IssueRow): Issue {
     severity: row.severity,
     category: row.category,
     status: row.status,
+    kind: row.kind,
+    provider: row.provider,
     foundAt: row.found_at,
     updatedAt: row.updated_at,
     scoreImpact: row.score_impact,
+    displayValue: row.display_value,
+    savingsMs: row.savings_ms,
     effort: row.effort,
     affectedPages: row.affected_pages,
     ruleId: row.rule_id,
@@ -101,25 +158,30 @@ export function toIssue(row: IssueRow): Issue {
 }
 
 /**
- * A website's headline scores are those of its most recent completed audit —
- * they are not stored on the website row, so there is no chance of the two
- * drifting apart.
+ * A website's headline figures come from its most recent completed audit, so
+ * the two can never disagree. A failed run afterwards is surfaced separately
+ * rather than overwriting the last known-good result.
  */
-export function toWebsite(
-  row: WebsiteRow,
-  auditsForSite: Audit[],
-  today: Date,
-): Website {
-  const latestCompleted = auditsForSite
-    .filter((audit) => audit.status === "completed")
-    .sort(
-      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-    )[0];
+export function toWebsite(row: WebsiteRow, auditsForSite: Audit[]): Website {
+  const byNewest = [...auditsForSite].sort(
+    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+  );
+
+  const latestCompleted = byNewest.find((audit) => audit.status === "completed");
+  const newest = byNewest[0];
 
   const scores = latestCompleted?.scores ?? EMPTY_SCORES;
-  const health = latestCompleted ? healthScore(scores) : 0;
 
-  const base: Website = {
+  const lastFailure =
+    newest && newest.status === "failed"
+      ? {
+          at: newest.startedAt,
+          reason: newest.failureReason ?? "The audit failed.",
+          code: newest.errorCode ?? null,
+        }
+      : null;
+
+  return {
     id: row.id,
     name: row.name,
     url: row.url,
@@ -129,26 +191,15 @@ export function toWebsite(
     tags: row.tags,
     status: row.status,
     scores,
-    healthScore: health,
-    uptime30d: 100,
-    avgResponseMs: latestCompleted
-      ? responseTimeFor(row.id, scores.performance)
-      : 0,
+    healthScore: latestCompleted ? healthScore(scores) : 0,
+    // Real measured server response time. Null only when no completed audit
+    // exists or Lighthouse omitted it — never as a stand-in for a fast 0ms.
+    ttfbMs: latestCompleted?.labTtfbMs ?? null,
+    field: latestCompleted?.field ?? null,
     lastAuditAt: latestCompleted?.startedAt ?? "",
+    lastFailure,
     monitoringSince: row.created_at,
   };
-
-  const uptime = uptimeForWebsite(base, today);
-  return { ...base, uptime30d: uptimePercent(uptime) };
-}
-
-export function uptimeMapFor(
-  websites: Website[],
-  today: Date,
-): Record<string, UptimeDay[]> {
-  return Object.fromEntries(
-    websites.map((website) => [website.id, uptimeForWebsite(website, today)]),
-  );
 }
 
 export function toSettings(

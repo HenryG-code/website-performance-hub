@@ -1,17 +1,27 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Play } from "lucide-react";
+import { ChevronDown, Loader2, Monitor, Play, Smartphone } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/toast";
 import { useAppStore } from "@/lib/store/app-store";
+import type { Device } from "@/types";
+import { cn } from "@/lib/utils";
 
 /**
- * Kicks off a simulated audit.
+ * Runs real PageSpeed Insights audits.
  *
- * The run is written to Supabase as `running` straight away, then resolved a
- * couple of seconds later with scores, lab metrics and any new findings — so
- * the result survives a reload and shows up on every device.
+ * A live run takes 10-60s per site, so the control stays disabled and explicit
+ * about what it is doing for the whole round-trip. The strategy picker maps
+ * directly onto PageSpeed's `mobile` and `desktop` strategies.
  */
 export function RunAuditButton({
   websiteIds,
@@ -20,7 +30,6 @@ export function RunAuditButton({
   size = "md",
   className,
 }: {
-  /** One id runs a single site; several run them together. */
   websiteIds: string[];
   label?: string;
   variant?: ButtonProps["variant"];
@@ -29,10 +38,15 @@ export function RunAuditButton({
 }) {
   const { runAudit, isAuditing, state } = useAppStore();
   const { toast } = useToast();
-  const [starting, setStarting] = React.useState(false);
 
-  const running = websiteIds.some(isAuditing);
-  const disabled = running || starting || websiteIds.length === 0;
+  const [strategy, setStrategy] = React.useState<Device>(
+    state.settings.defaultDevice,
+  );
+  const [busy, setBusy] = React.useState(false);
+  const [progress, setProgress] = React.useState<string | null>(null);
+
+  const running = websiteIds.some(isAuditing) || busy;
+  const disabled = running || websiteIds.length === 0;
 
   const resolvedLabel =
     label ??
@@ -40,46 +54,105 @@ export function RunAuditButton({
       ? "Run audit"
       : `Run audit on ${websiteIds.length} sites`);
 
-  async function handleClick() {
-    setStarting(true);
-    const results = await Promise.all(websiteIds.map((id) => runAudit(id)));
-    setStarting(false);
+  async function run(chosen: Device) {
+    setBusy(true);
+    setStrategy(chosen);
 
-    const started = results.filter((result) => result.ok).length;
+    try {
+      // Sequential rather than parallel: PageSpeed rate-limits per key, and a
+      // burst of concurrent requests is the quickest way to get throttled.
+      let succeeded = 0;
+      const failures: string[] = [];
 
-    if (started === 0) {
-      const failure = results.find((result) => !result.ok);
-      toast({
-        tone: "warning",
-        title: "Couldn't start the audit",
-        description: failure && !failure.ok ? failure.error : undefined,
-      });
-      return;
+      for (const [index, id] of websiteIds.entries()) {
+        if (websiteIds.length > 1) {
+          setProgress(`${index + 1} of ${websiteIds.length}`);
+        }
+        const result = await runAudit(id, chosen);
+        if (result.ok) succeeded += 1;
+        else failures.push(result.error);
+      }
+
+      if (succeeded > 0) {
+        toast({
+          tone: "success",
+          title:
+            succeeded === 1
+              ? `Audit complete (${chosen})`
+              : `${succeeded} audits complete (${chosen})`,
+          description:
+            failures.length > 0
+              ? `${failures.length} failed. See the audit history for details.`
+              : "Scores, metrics and findings come from Google PageSpeed Insights.",
+        });
+      } else {
+        toast({
+          tone: "warning",
+          title: "Audit failed",
+          description: failures[0] ?? "The audit could not be run.",
+        });
+      }
+    } finally {
+      setBusy(false);
+      setProgress(null);
     }
-
-    const name =
-      started === 1
-        ? (state.websites.find((w) => w.id === websiteIds[0])?.name ?? "website")
-        : `${started} websites`;
-
-    toast({
-      tone: "info",
-      title: `Audit started for ${name}`,
-      description: "Collecting Lighthouse metrics — results appear in a moment.",
-    });
   }
 
+  if (!state.auditsConfigured) {
+    return (
+      <Button variant="outline" size={size} disabled className={className}>
+        <Play />
+        Audits not configured
+      </Button>
+    );
+  }
+
+  const StrategyIcon = strategy === "mobile" ? Smartphone : Monitor;
+
   return (
-    <Button
-      variant={variant}
-      size={size}
-      onClick={handleClick}
-      disabled={disabled}
-      className={className}
-      aria-live="polite"
-    >
-      {running || starting ? <Loader2 className="animate-spin" /> : <Play />}
-      {running || starting ? "Running audit…" : resolvedLabel}
-    </Button>
+    <div className={cn("flex", className)}>
+      <Button
+        variant={variant}
+        size={size}
+        onClick={() => void run(strategy)}
+        disabled={disabled}
+        aria-live="polite"
+        className="rounded-r-none"
+      >
+        {running ? <Loader2 className="animate-spin" /> : <Play />}
+        {running
+          ? progress
+            ? `Auditing ${progress}…`
+            : "Running audit…"
+          : resolvedLabel}
+      </Button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant={variant}
+            size={size}
+            disabled={disabled}
+            aria-label="Choose audit strategy"
+            className="rounded-l-none border-l border-black/25 px-2"
+          >
+            <StrategyIcon />
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>PageSpeed strategy</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => void run("mobile")}>
+            <Smartphone />
+            Mobile
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void run("desktop")}>
+            <Monitor />
+            Desktop
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

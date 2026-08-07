@@ -5,24 +5,21 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useRef,
   useState,
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
 import { createWebsite, deleteWebsite, updateWebsite } from "@/app/actions/websites";
-import { completeAudit, startAudit } from "@/app/actions/audits";
+import { runAudit as runAuditAction } from "@/app/actions/audits";
 import { setIssueStatus as setIssueStatusAction } from "@/app/actions/issues";
 import {
   updateNotifications,
   updateProfile,
   updateReportPreferences,
 } from "@/app/actions/settings";
-import { seedDemoWorkspace } from "@/app/actions/dev-seed";
-import { AUDIT_SIMULATION_MS } from "@/lib/audit/simulate";
 import type { ActionResult } from "@/app/actions/types";
 import type { WebsiteInput } from "@/lib/validation";
-import type { AppState, Issue, IssueStatus, SettingsPatch } from "@/types";
+import type { AppState, Device, Issue, IssueStatus, SettingsPatch } from "@/types";
 
 interface AppStoreValue {
   /** The signed-in user's workspace, loaded server-side on every navigation. */
@@ -32,18 +29,17 @@ interface AppStoreValue {
   addWebsite: (input: WebsiteInput) => Promise<ActionResult<{ id: string }>>;
   editWebsite: (id: string, input: WebsiteInput) => Promise<ActionResult>;
   removeWebsite: (id: string) => Promise<ActionResult>;
-  runAudit: (websiteId: string) => Promise<ActionResult>;
+  /** Runs a real PageSpeed audit. Resolves only once the result is stored. */
+  runAudit: (
+    websiteId: string,
+    strategy: Device,
+  ) => Promise<ActionResult<{ auditId: string }>>;
   isAuditing: (websiteId: string) => boolean;
   setIssueStatus: (id: string, status: IssueStatus) => Promise<ActionResult>;
   updateSettings: (patch: SettingsPatch) => Promise<ActionResult>;
-  /** Development helper; disabled in production builds. */
-  seedDemoData: () => Promise<ActionResult>;
-  canSeedDemoData: boolean;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
-
-const CAN_SEED = process.env.NODE_ENV !== "production";
 
 export function AppStoreProvider({
   initialState,
@@ -56,7 +52,6 @@ export function AppStoreProvider({
   const [pending, startTransition] = useTransition();
 
   const [runningSites, setRunningSites] = useState<string[]>([]);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   /**
    * Issue-status edits applied locally the instant they are made.
@@ -129,35 +124,29 @@ export function AppStoreProvider({
   );
 
   /**
-   * Two-phase run: the `running` row appears immediately, then resolves after a
-   * short delay. The delay is cosmetic for now — when real Lighthouse runs
-   * arrive, the completion step becomes a webhook or poll instead.
+   * Runs a real audit. The action does the whole round-trip to Google and
+   * stores the outcome before resolving, so the local flag exists purely to
+   * disable the button and show progress for the 10-60s it takes.
    */
   const runAudit = useCallback(
-    async (websiteId: string): Promise<ActionResult> => {
+    async (
+      websiteId: string,
+      strategy: Device,
+    ): Promise<ActionResult<{ auditId: string }>> => {
       if (runningSites.includes(websiteId)) {
         return { ok: false, error: "An audit is already running for that site." };
       }
 
       setRunningSites((prev) => [...prev, websiteId]);
-      const started = await startAudit(websiteId);
-
-      if (!started.ok) {
-        setRunningSites((prev) => prev.filter((id) => id !== websiteId));
-        return started;
-      }
-
-      refresh();
-      const auditId = started.data!.auditId;
-
-      const timer = setTimeout(async () => {
-        await completeAudit(auditId);
-        setRunningSites((prev) => prev.filter((id) => id !== websiteId));
+      try {
+        const result = await runAuditAction(websiteId, strategy);
+        // Refresh either way: a failure is itself a stored audit the user
+        // should see in the history.
         refresh();
-      }, AUDIT_SIMULATION_MS);
-
-      timers.current.push(timer);
-      return { ok: true };
+        return result;
+      } finally {
+        setRunningSites((prev) => prev.filter((id) => id !== websiteId));
+      }
     },
     [runningSites, refresh],
   );
@@ -225,12 +214,6 @@ export function AppStoreProvider({
     [refresh],
   );
 
-  const seedDemoData = useCallback(async () => {
-    const result = await seedDemoWorkspace();
-    if (result.ok) refresh();
-    return result;
-  }, [refresh]);
-
   const value = useMemo<AppStoreValue>(
     () => ({
       state,
@@ -242,8 +225,6 @@ export function AppStoreProvider({
       isAuditing,
       setIssueStatus,
       updateSettings,
-      seedDemoData,
-      canSeedDemoData: CAN_SEED,
     }),
     [
       state,
@@ -255,7 +236,6 @@ export function AppStoreProvider({
       isAuditing,
       setIssueStatus,
       updateSettings,
-      seedDemoData,
     ],
   );
 

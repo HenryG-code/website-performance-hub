@@ -16,7 +16,6 @@ import { NavLinks } from "./nav-links";
 import { Logo } from "./logo";
 import { useAppStore } from "@/lib/store/app-store";
 import { portfolioSummary } from "@/lib/store/selectors";
-import { formatPercent } from "@/lib/format";
 import { NAV_ITEMS, isActivePath } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
@@ -56,10 +55,10 @@ export function MobileNav() {
 
         <div className="shrink-0 border-t border-border p-4">
           <p className="text-[11px] tracking-wide text-subtle-foreground uppercase">
-            Portfolio uptime
+            Portfolio health
           </p>
-          <p className="mt-1 font-mono text-lg font-semibold text-success tabular-nums">
-            {formatPercent(summary.uptime, 2)}
+          <p className="mt-1 font-mono text-lg font-semibold text-foreground tabular-nums">
+            {summary.monitoredCount > 0 ? summary.health : "—"}
           </p>
         </div>
       </SheetContent>

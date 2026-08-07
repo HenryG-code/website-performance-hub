@@ -31,10 +31,20 @@ export interface Website {
   scores: Scores;
   /** Weighted 0-100 roll-up of `scores`. */
   healthScore: number;
-  /** Percentage uptime over the trailing 30 days. */
-  uptime30d: number;
-  avgResponseMs: number;
+  /**
+   * Server response time from the latest completed audit's lab metrics, in
+   * milliseconds. Null when no audit has completed or Lighthouse omitted it.
+   */
+  ttfbMs: number | null;
+  /** Real-user data from the latest completed audit, if Google reported any. */
+  field: FieldVitals | null;
+  /** Start time of the most recent completed audit; empty when never audited. */
   lastAuditAt: string;
+  /**
+   * Set when the most recent run failed. The site keeps showing its last good
+   * scores, with this surfaced alongside rather than replacing them.
+   */
+  lastFailure: { at: string; reason: string; code: string | null } | null;
   monitoringSince: string;
 }
 
@@ -62,25 +72,81 @@ export interface WebVitals {
   speedIndex: number;
 }
 
+/** Where an audit's numbers came from. */
+export type AuditProvider = "pagespeed" | "simulated";
+
+/** Google's bucketing of a real-user metric. */
+export type CruxCategory = "FAST" | "AVERAGE" | "SLOW" | "NONE";
+
+/**
+ * Real-user (CrUX) Core Web Vitals, in milliseconds except `cls`.
+ *
+ * Every field is nullable: Google only reports field data for URLs and origins
+ * with enough real traffic, and a missing metric must read as "not reported"
+ * rather than zero.
+ */
+export interface FieldVitals {
+  scope: "url" | "origin" | null;
+  overallCategory: CruxCategory | null;
+  lcpMs: number | null;
+  inpMs: number | null;
+  cls: number | null;
+  fcpMs: number | null;
+  ttfbMs: number | null;
+  /**
+   * Google's own good/needs-improvement/poor banding per metric. Only the
+   * overall category is stored, so per-metric bands are derived from the
+   * published Core Web Vitals thresholds when reading a stored audit.
+   */
+  categories: {
+    lcp: CruxCategory | null;
+    inp: CruxCategory | null;
+    cls: CruxCategory | null;
+    fcp: CruxCategory | null;
+    ttfb: CruxCategory | null;
+  };
+}
+
 export interface Audit {
   id: string;
   websiteId: string;
   status: AuditStatus;
   trigger: AuditTrigger;
+  /** PageSpeed strategy: `desktop` or `mobile`. */
   device: Device;
+  provider: AuditProvider;
   startedAt: string;
   /** Wall-clock duration of the run in milliseconds. */
   durationMs: number;
   scores: Scores;
   healthScore: number;
+  /** Lighthouse lab metrics. Seconds for lcp/fcp/speedIndex, ms for the rest. */
   vitals: WebVitals;
-  /** Number of issues opened by this run. */
+  /**
+   * Measured server response time in milliseconds, kept separately from
+   * `vitals` because it is surfaced as a headline figure and 0ms is a real
+   * result — a well-cached origin genuinely reports it. `vitals.ttfb` collapses
+   * "not reported" to 0, which would be indistinguishable.
+   */
+  labTtfbMs: number | null;
+  /** CrUX field data, or null when Google reported none. */
+  field: FieldVitals | null;
+  /** URL submitted to the provider. */
+  requestedUrl: string | null;
+  /** Where the provider ended up after redirects. */
+  finalUrl: string | null;
+  lighthouseVersion: string | null;
+  /** When the provider ran the analysis, which is not when we stored it. */
+  analysedAt: string | null;
+  /** Number of findings opened by this run. */
   issuesFound: number;
-  /** Checks that passed, used for the "N audits passed" summary. */
+  /** Checks that passed, used for the "N checks passed" summary. */
   passedChecks: number;
   totalChecks: number;
   /** Populated when `status === "failed"`. */
   failureReason?: string;
+  /** Machine-readable failure cause, e.g. `quota-exceeded`. */
+  errorCode?: string;
 }
 
 export type Severity = "critical" | "high" | "medium" | "low";
@@ -96,6 +162,9 @@ export type IssueCategory =
 
 export type Effort = "low" | "medium" | "high";
 
+/** Lighthouse splits failing audits into savings-bearing and informational. */
+export type FindingKind = "opportunity" | "diagnostic";
+
 export interface Issue {
   id: string;
   websiteId: string;
@@ -106,13 +175,20 @@ export interface Issue {
   severity: Severity;
   category: IssueCategory;
   status: IssueStatus;
+  kind: FindingKind;
+  provider: AuditProvider;
   foundAt: string;
   updatedAt: string;
-  /** Estimated score points recovered by fixing this. */
+  /** Score points this category regains if the check passes outright. */
   scoreImpact: number;
+  /** Lighthouse's own summary, e.g. "Potential savings of 1.2 s". */
+  displayValue: string | null;
+  /** Milliseconds Lighthouse estimates fixing this would save, if it says. */
+  savingsMs: number | null;
   effort: Effort;
+  /** Specific resource URLs the provider flagged. */
   affectedPages: string[];
-  /** Reference to the underlying audit rule, e.g. `render-blocking-resources`. */
+  /** The provider's rule id, e.g. `render-blocking-resources`. */
   ruleId: string;
 }
 
@@ -126,13 +202,6 @@ export interface TrendPoint {
   health: number;
 }
 
-export interface UptimeDay {
-  date: string;
-  /** Percentage of the day the site responded successfully. */
-  uptime: number;
-  avgResponseMs: number;
-  incidents: number;
-}
 
 export interface NotificationPreferences {
   auditCompleted: boolean;
@@ -185,8 +254,11 @@ export interface AppState {
   audits: Audit[];
   issues: Issue[];
   trends: Record<string, TrendPoint[]>;
-  uptime: Record<string, UptimeDay[]>;
   settings: Settings;
+  /** True when PAGESPEED_API_KEY is configured on the server. */
+  auditsConfigured: boolean;
+  /** Count of rows left by the retired simulated engine, for the cleanup path. */
+  simulatedRowCounts: { audits: number; issues: number };
 }
 
 /**
@@ -195,10 +267,7 @@ export interface AppState {
  */
 export interface LegacyPersistedState {
   version: number;
-  websites: Website[];
-  audits: Audit[];
-  issues: Issue[];
-  trends?: Record<string, TrendPoint[]>;
-  uptime?: Record<string, UptimeDay[]>;
-  settings?: Partial<Settings>;
+  websites: unknown[];
+  audits: unknown[];
+  issues: unknown[];
 }

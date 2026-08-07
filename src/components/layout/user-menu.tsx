@@ -1,8 +1,7 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
-import { BellRing, DatabaseZap, Loader2, LogOut, User } from "lucide-react";
+import { BellRing, ChevronDown, LogOut, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,35 +9,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useToast } from "@/components/ui/toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { signOut } from "@/app/actions/auth";
 import { initialsFrom } from "@/lib/format";
-import { ChevronDown } from "lucide-react";
 
 export function UserMenu() {
-  const { state, seedDemoData, canSeedDemoData } = useAppStore();
-  const { toast } = useToast();
-  const [seeding, setSeeding] = React.useState(false);
+  const { state } = useAppStore();
   const { profile } = state.settings;
 
   const displayName = profile.name || profile.email || "Your account";
-
-  async function handleSeed() {
-    setSeeding(true);
-    const result = await seedDemoData();
-    setSeeding(false);
-
-    toast(
-      result.ok
-        ? {
-            tone: "success",
-            title: "Demo data added",
-            description: "Eight sample websites with audit history are now in your workspace.",
-          }
-        : { tone: "warning", title: "Couldn't add demo data", description: result.error },
-    );
-  }
 
   return (
     <DropdownMenu>
@@ -85,23 +64,6 @@ export function UserMenu() {
             Notification preferences
           </Link>
         </DropdownMenuItem>
-
-        {canSeedDemoData ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={(event) => {
-                // Keep the menu open while the request is in flight.
-                event.preventDefault();
-                void handleSeed();
-              }}
-              disabled={seeding}
-            >
-              {seeding ? <Loader2 className="animate-spin" /> : <DatabaseZap />}
-              {seeding ? "Adding demo data…" : "Load demo data"}
-            </DropdownMenuItem>
-          </>
-        ) : null}
 
         <DropdownMenuSeparator />
 

@@ -6,7 +6,6 @@ import type {
   ScoreKey,
   Scores,
   TrendPoint,
-  UptimeDay,
   Website,
 } from "@/types";
 
@@ -44,9 +43,6 @@ export function trendFor(state: AppState, id: string): TrendPoint[] {
   return state.trends[id] ?? [];
 }
 
-export function uptimeFor(state: AppState, id: string): UptimeDay[] {
-  return state.uptime[id] ?? [];
-}
 
 export function websiteName(state: AppState, id: string): string {
   return getWebsite(state, id)?.name ?? "Unknown website";
@@ -55,15 +51,20 @@ export function websiteName(state: AppState, id: string): string {
 export interface PortfolioSummary {
   health: number;
   scores: Scores;
-  uptime: number;
   websiteCount: number;
+  /** Sites with at least one completed audit. */
   monitoredCount: number;
   auditCount: number;
   openIssues: number;
   criticalIssues: number;
   /** Health-score change over the trailing 30 days, in points. */
   healthDelta: number;
-  uptimeIncidents: number;
+  /** Sites whose most recent run failed. */
+  failedCount: number;
+  /** Mean measured server response time, in ms. Null when none reported. */
+  medianTtfbMs: number | null;
+  /** Sites for which Google reported real-user field data. */
+  fieldDataCount: number;
 }
 
 /** Only sites with at least one completed audit contribute to averages. */
@@ -91,10 +92,6 @@ export function portfolioSummary(
       : 0;
   }
 
-  const uptime = scored.length
-    ? scored.reduce((sum, w) => sum + w.uptime30d, 0) / scored.length
-    : 100;
-
   const issues = state.issues.filter((i) => ids.has(i.websiteId));
   const trend = aggregateTrend(state, websites.map((w) => w.id));
   const health = scored.length ? healthScore(scores) : 0;
@@ -102,17 +99,19 @@ export function portfolioSummary(
   const thirtyDaysBack = baselinePoint(trend, 30);
   const healthDelta = thirtyDaysBack ? health - thirtyDaysBack.health : 0;
 
-  const incidents = websites.reduce(
-    (sum, w) =>
-      sum +
-      (state.uptime[w.id] ?? []).reduce((s, day) => s + day.incidents, 0),
-    0,
-  );
+  // Median rather than mean: one pathologically slow origin should not drag the
+  // portfolio figure somewhere unrepresentative.
+  const ttfbs = scored
+    .map((w) => w.ttfbMs)
+    .filter((value): value is number => typeof value === "number")
+    .sort((a, b) => a - b);
+  const medianTtfbMs = ttfbs.length
+    ? ttfbs[Math.floor((ttfbs.length - 1) / 2)]
+    : null;
 
   return {
     health,
     scores,
-    uptime: Math.round(uptime * 100) / 100,
     websiteCount: websites.length,
     monitoredCount: scored.length,
     auditCount: state.audits.filter((a) => ids.has(a.websiteId)).length,
@@ -120,7 +119,9 @@ export function portfolioSummary(
     criticalIssues: issues.filter((i) => isActive(i) && i.severity === "critical")
       .length,
     healthDelta,
-    uptimeIncidents: incidents,
+    failedCount: websites.filter((w) => w.lastFailure !== null).length,
+    medianTtfbMs,
+    fieldDataCount: websites.filter((w) => w.field !== null).length,
   };
 }
 

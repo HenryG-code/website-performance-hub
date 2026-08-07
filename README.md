@@ -4,12 +4,13 @@ A website-health dashboard for owners and agencies. PerformanceHub brings
 performance, SEO, accessibility, best-practice, uptime and issue-tracking data
 for every site you manage into one place.
 
-**Phase 2: a secure, persistent, multi-user product.** Users sign up, sign in
-and see only their own websites, audits, issues and settings — enforced by
-Postgres Row Level Security, not just by application code.
+**Every score, metric, finding and audit date in this app comes from a real
+Google PageSpeed Insights response, stored verbatim.** Nothing is simulated, and
+nothing is estimated to fill a gap — where Google reports no data, the UI says
+so rather than showing a plausible number.
 
-Audit *execution* is still simulated (no page is actually fetched), but every
-result it produces is written to Postgres and survives reloads and devices.
+Users sign up, sign in, and see only their own websites, audits, issues and
+settings, enforced by Postgres Row Level Security.
 
 ---
 
@@ -31,15 +32,34 @@ cp .env.example .env.local
 
 Fill in from **Supabase dashboard → Project Settings → API**:
 
-| Variable | What it is |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Project API URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable ("anon") key |
-| `NEXT_PUBLIC_SITE_URL` | Origin used in confirmation and reset emails |
+| Variable | What it is | Required |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project API URL | Yes |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable ("anon") key | Yes |
+| `NEXT_PUBLIC_SITE_URL` | Origin used in confirmation and reset emails | Yes |
+| `PAGESPEED_API_KEY` | Google PageSpeed Insights API key | Yes, to run audits |
 
-The anon key is safe in the browser: it grants no privileges of its own, and
-every table is protected by RLS. **The service-role key is never used by this
-application and must not be added** — it bypasses RLS entirely.
+The Supabase anon key is safe in the browser: it grants no privileges of its
+own, and every table is protected by RLS. **The service-role key is never used
+by this application and must not be added** — it bypasses RLS entirely.
+
+`PAGESPEED_API_KEY` has no `NEXT_PUBLIC_` prefix, so Next has no mechanism to
+inline it into browser JavaScript. It is read only by
+`src/lib/pagespeed/client.ts`, which is marked `server-only` — importing that
+module from a client component is a build error.
+
+### Getting a PageSpeed API key
+
+1. Open the [Google Cloud console](https://console.cloud.google.com/) and create
+   or select a project.
+2. **APIs & Services → Library** → enable **PageSpeed Insights API**.
+3. **APIs & Services → Credentials → Create credentials → API key**.
+4. Restrict the key to the PageSpeed Insights API.
+
+Without a key, the API permits only a small anonymous allowance shared across
+every caller worldwide; in practice it returns HTTP 429 straight away. The app
+detects a missing key and disables the audit button with an explanation rather
+than failing at run time.
 
 ### 3. Apply migrations
 
@@ -80,6 +100,70 @@ Open <http://localhost:3000>, create an account, and add your first website.
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint across the project |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Vitest, once |
+| `npm run test:watch` | Vitest in watch mode |
+
+---
+
+## Where the data comes from
+
+Every audit is one call to
+`https://www.googleapis.com/pagespeedonline/v5/runPagespeed`, requesting all
+four Lighthouse categories for a `mobile` or `desktop` strategy. The response is
+stored verbatim in `audits.raw_response`, and everything shown is derived from
+it.
+
+### Lab vs. field
+
+The two are shown side by side and never merged, because they measure different
+things:
+
+| | Lab (Lighthouse) | Field (CrUX) |
+| --- | --- | --- |
+| Source | One synthetic run on Google's hardware | Real Chrome users, trailing 28 days |
+| Availability | Always | Only for sites with enough traffic |
+| Used for | Category scores, TBT, Speed Index | Real-user LCP, INP, CLS |
+
+INP has no lab equivalent — Lighthouse cannot measure real interactions — so it
+shows as *Not measured* in the lab column rather than being substituted.
+
+**When Google reports no field data**, the UI says so explicitly. Most small
+sites fall into this category, which is normal and not an error.
+
+### What is derived, and how
+
+- **Category scores** are Lighthouse's own, multiplied by 100.
+- **Severity** comes from Lighthouse's scoring bands (<0.5 failing, 0.5–0.89
+  needs improvement), sharpened by the audit's weight in its category and any
+  measured saving.
+- **Score impact** is the audit's weighted shortfall: `weight ÷ category weight
+  × (1 − score) × 100`. Since a category score is the weighted mean of its
+  audits, this is exactly the points recoverable by fixing it.
+- **Trends** are real completed audits grouped by day.
+
+Nothing else is derived. In particular there is **no uptime monitoring** in this
+product: earlier phases displayed a synthetic uptime figure, which has been
+removed rather than left to look like a measurement.
+
+### Quotas and rate limits
+
+Google's default quota for a keyed project is **25,000 requests/day** and
+**240 requests/minute**, and each run takes 10–60 seconds. On top of that the
+app applies its own limits, in `src/lib/audit/limits.ts`:
+
+| Limit | Value |
+| --- | --- |
+| Per user, per hour | 30 audits |
+| Per user, per day | 200 audits |
+| Same site + strategy cooldown | 60 seconds |
+| Provider request timeout | 90 seconds |
+| Abandoned run reclaimed after | 5 minutes |
+
+Auditing several sites at once runs them **sequentially**, not in parallel — a
+burst of concurrent requests is the fastest route to a 429.
+
+Storage is the other cost worth knowing: a raw PageSpeed response is typically
+300 KB–1 MB, so roughly 100 audits per 50 MB.
 
 ---
 
@@ -126,8 +210,11 @@ auth.users
   ├── profiles              (1:1)  full name, role, company, timezone
   ├── report_preferences    (1:1)  report title, brand, notification toggles, audit defaults
   └── websites              (1:N)  name, url, status, environment, team, tags
-        ├── audits          (1:N)  status, timing, four scores, health, Core Web Vitals
-        └── issues          (1:N)  severity, category, status, recommendation, affected pages
+        ├── audits          (1:N)  provider, requested/final URL, strategy, timing,
+        │                          four scores, lab vitals, CrUX field data,
+        │                          Lighthouse version, raw response
+        └── issues          (1:N)  rule id, severity, category, kind, status,
+                                   display value, measured saving, flagged resources
 ```
 
 Details worth knowing:
@@ -148,16 +235,45 @@ Details worth knowing:
 Enums (`website_status`, `audit_status`, `issue_severity`, …) generate exact
 TypeScript union types rather than bare strings — see `src/types/database.ts`.
 
-### Derived, not stored
+Also worth knowing:
 
-- **Trends** come from real audits, grouped by day. A new account has an empty
-  chart that fills in as audits accumulate — sparse and honest, rather than a
-  smooth line implying data that was never collected.
-- **Uptime** is derived deterministically from the website id. There is no
-  uptime prober in this phase, so there is no measured availability to store;
-  writing invented rows into the database would dress fiction up as fact. It's
-  stable per site, and `src/lib/derive/uptime.ts` is the single seam to replace
-  when real monitoring lands.
+- **`provider` distinguishes measured from generated.** Rows created by the
+  retired mock engine are labelled `simulated` and flagged wherever they appear.
+  A completed `pagespeed` row is required by a check constraint to carry both a
+  requested URL and a raw response, so a real audit cannot exist without its
+  evidence.
+- **Field columns are all-or-nothing.** A constraint enforces that field metrics
+  are null unless `field_data_available` is true, so partial CrUX data cannot be
+  mistaken for a complete reading.
+
+---
+
+## Auditing safely
+
+The audit endpoint is authenticated, authorised and rate-limited, and the target
+URL is validated before every run — not just when the website was added, because
+DNS changes and a hostname that was public last week can point somewhere
+internal today.
+
+`src/lib/security/url-guard.ts` rejects:
+
+- Anything that is not `http:` or `https:`
+- URLs carrying credentials (`user:pass@host`)
+- `localhost`, loopback, and internal suffixes (`.local`, `.internal`, `.corp`, …)
+- RFC 1918 private ranges, link-local, CGNAT, benchmarking, multicast, broadcast
+- IPv6 loopback, unique-local, link-local, and IPv4-mapped private addresses
+- Cloud metadata endpoints, including `169.254.169.254` and
+  `metadata.google.internal`
+- Hostnames that *resolve* to any of the above — DNS rebinding is checked by
+  looking up every returned address
+
+**Redirects are checked too.** Google follows redirects during analysis, so the
+`finalUrl` it reports is re-validated before the result is stored; a page that
+redirects somewhere internal has its result discarded.
+
+Authorisation is enforced at both ends: the action verifies the website belongs
+to the caller, and RLS independently prevents reading or writing another user's
+rows even if that check were bypassed.
 
 ---
 
@@ -222,17 +338,20 @@ src/
 │   │   ├── websites/[id]/ audits/[id]/ issues/ reports/ settings/
 │   ├── auth/callback/route.ts  # Email link handler (PKCE code + token_hash)
 │   └── actions/                # Server actions: auth, websites, audits, issues,
-│                               # settings, dev seed, legacy import
+│                               # settings, maintenance, legacy import
 ├── proxy.ts                    # Session refresh + route protection
-├── components/                 # ui/ layout/ shared/ charts/ dashboard/
-│                               # websites/ audits/ issues/ reports/ auth/ onboarding/
+├── components/                 # ui/ layout/ shared/ charts/ dashboard/ websites/
+│                               # audits/ issues/ reports/ auth/ settings/ onboarding/
 ├── lib/
-│   ├── supabase/               # browser client, server client, session middleware, env
+│   ├── pagespeed/              # PSI client, response mapper, types, fixtures
+│   │   ├── client.ts           # server-only; holds the API key
+│   │   └── map.ts              # Response -> scores, vitals, field data, findings
+│   ├── security/url-guard.ts   # SSRF / private-address validation
+│   ├── audit/limits.ts         # Rate limits, cooldown, staleness policy
+│   ├── supabase/               # browser client, server client, session proxy, env
 │   ├── data/                   # workspace query + row→domain mappers
-│   ├── derive/                 # trends from audits, simulated uptime
-│   ├── audit/simulate.ts       # Audit simulation (server-side)
+│   ├── derive/trends.ts        # Trends from real audits
 │   ├── store/                  # Client store over server data + server actions
-│   ├── mock/                   # Seeded generator, used only by the dev seed
 │   └── validation.ts           # Shared zod schemas
 ├── types/
 │   ├── index.ts                # Domain types
@@ -253,21 +372,50 @@ snap back during the round-trip, and roll back if the server rejects them.
 
 ---
 
-## Development data
+## Retiring the simulated engine
 
-**New accounts start empty**, with onboarding empty states throughout.
+The mock audit generator has been removed from the codebase entirely. There is
+no demo-data seeder and no sample websites: an empty account stays empty until
+you add a real site and audit it.
 
-**Demo data (development only).** Account menu → *Load demo data*, or Settings →
-Workspace data. It writes eight sample websites with ~100 audits and ~78
-findings under your own `owner_id`. The server action refuses outright when
-`NODE_ENV === "production"` — the guard is on the server, not just hidden in the
-UI, because a server action is a public endpoint.
+Rows created by the old engine were **not** deleted by the migration. They are
+relabelled `provider = 'simulated'` and flagged wherever they appear, because
+deleting a user's data as a silent side effect of a schema change is the wrong
+default.
 
-**Phase-1 localStorage data.** If the browser still holds a `performancehub:state`
-payload from phase 1, a banner offers to import or discard it. It never imports
-automatically: that data belongs to whoever used the browser last, and silently
-attaching it to whichever account signs in next would be wrong. Nothing is
-deleted until you choose.
+To remove them: **Settings → Simulated data → Review and remove**. The dialog
+reports exactly how many audits and findings will go, names any website that
+would be left with no history at all, and requires the count to be typed back
+before the button enables. The server re-counts and refuses if the number has
+changed since you looked. **Website records are never deleted.**
+
+### Mock data that remains
+
+Only `src/lib/pagespeed/__fixtures__/psi-response.ts` — trimmed PageSpeed
+responses used by the mapper tests. It is imported by test files only and never
+reaches a running application.
+
+---
+
+## Testing
+
+```bash
+npm test
+```
+
+121 tests across five suites:
+
+| Suite | Covers |
+| --- | --- |
+| `security/url-guard.test.ts` | Private ranges, loopback, metadata endpoints, schemes, credentials, DNS-shaped inputs |
+| `pagespeed/map.test.ts` | Score conversion, lab metrics, CrUX scope and CLS rescaling, finding classification, severity, score-impact maths |
+| `pagespeed/client.test.ts` | Request shape, key handling, every provider error path, timeout, key never leaking into messages |
+| `audit/limits.test.ts` | Duplicate runs, cooldown, hourly and daily caps, precedence |
+| `actions/audits.test.ts` | Authorisation, cross-account refusal, SSRF refusal, missing-key refusal |
+
+The mapper tests assert on fixtures shaped exactly like real v5 payloads,
+including the CrUX convention of sending CLS multiplied by 100 — a detail that
+silently produces 100× wrong values if mishandled.
 
 ---
 
@@ -295,19 +443,39 @@ not code:
 
 ---
 
+## Known limitations
+
+- **Audits run inline.** A run holds the request open for its full 10–60s.
+  That is fine at this scale and makes the stored result terminal, but it caps
+  how many sites can be audited in one action before a platform request timeout
+  becomes a concern. A queue with webhook completion is the next step.
+- **No scheduled audits.** `audit_frequency` is stored and shown in Settings but
+  nothing acts on it yet; every run is manual.
+- **No uptime monitoring.** Removed rather than simulated. Reinstating it needs
+  a real prober and an `uptime_checks` table.
+- **Findings carry no separate recommendation.** Lighthouse folds its guidance
+  into the audit description, which is stored and displayed verbatim; the
+  `recommendation` column is left empty rather than paraphrasing advice Google
+  did not give.
+- **`effort` is legacy.** It came from the mock catalogue and is no longer
+  displayed. Lighthouse's measured saving is shown instead.
+- **Insight audits report zero score impact.** Lighthouse 13's `*-insight`
+  audits carry weight 0 in their category — they are advisory overlays on the
+  metrics that *are* weighted — so their computed score impact is 0 even when
+  they report a large time saving. Lists are ordered by severity rather than
+  score impact so these still surface near the top, but the "points if fixed"
+  figure understates them.
+
 ## Future integration plan
 
-**Phase 3 — real audits.** Replace `src/lib/audit/simulate.ts` with a PageSpeed
-Insights / Lighthouse CI client. `Audit`, `Scores` and `WebVitals` already match
-those payloads. Move execution to a queue-backed job and resolve runs from a
-webhook rather than a client-side timer.
+**Next — scale and scheduling.** Move audit execution to a queue with webhook
+completion, and drive scheduled runs from the stored `audit_frequency`.
 
-**Phase 4 — monitoring and delivery.** A real uptime prober replacing
-`lib/derive/uptime.ts` with an `uptime_checks` table; scheduled audits driven by
-the stored `audit_frequency`; the notification service behind the existing
-preference toggles; PDF and CSV report export.
+**Then — monitoring and delivery.** A real uptime prober with its own table;
+the notification service behind the existing preference toggles; PDF and CSV
+report export.
 
-**Phase 5 — collaboration.** Teams and shared workspaces, which is where the
+**Later — collaboration.** Teams and shared workspaces, which is where the
 single-owner RLS model becomes membership-based. Public report links. Billing.
 
 None of these are in this phase.
