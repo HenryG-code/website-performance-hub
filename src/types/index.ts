@@ -159,6 +159,10 @@ export interface Settings {
   defaultDevice: Device;
   /** Health score below which a website is flagged. */
   scoreThreshold: number;
+  /** Heading used on generated reports. */
+  reportTitle: string;
+  /** Agency or company name shown on reports. */
+  brandName: string;
 }
 
 /**
@@ -171,13 +175,30 @@ export interface SettingsPatch
   notifications?: Partial<NotificationPreferences>;
 }
 
-/** Serialised shape written to localStorage. */
-export interface PersistedState {
-  version: number;
+/**
+ * The signed-in user's whole workspace, assembled server-side and handed to the
+ * client store. Trends and uptime are derived rather than stored — see
+ * `lib/derive`.
+ */
+export interface AppState {
   websites: Website[];
   audits: Audit[];
   issues: Issue[];
   trends: Record<string, TrendPoint[]>;
   uptime: Record<string, UptimeDay[]>;
   settings: Settings;
+}
+
+/**
+ * Shape of the phase-1 localStorage payload, kept only so an existing browser's
+ * demo data can be recognised and offered for import. Nothing writes it.
+ */
+export interface LegacyPersistedState {
+  version: number;
+  websites: Website[];
+  audits: Audit[];
+  issues: Issue[];
+  trends?: Record<string, TrendPoint[]>;
+  uptime?: Record<string, UptimeDay[]>;
+  settings?: Partial<Settings>;
 }

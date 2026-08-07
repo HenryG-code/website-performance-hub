@@ -1,8 +1,8 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { BellRing, ChevronDown, LogOut, RotateCcw, User } from "lucide-react";
+import { BellRing, DatabaseZap, Loader2, LogOut, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,22 +12,32 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/toast";
 import { useAppStore } from "@/lib/store/app-store";
+import { signOut } from "@/app/actions/auth";
 import { initialsFrom } from "@/lib/format";
+import { ChevronDown } from "lucide-react";
 
 export function UserMenu() {
-  const { state, resetData } = useAppStore();
+  const { state, seedDemoData, canSeedDemoData } = useAppStore();
   const { toast } = useToast();
-  const router = useRouter();
+  const [seeding, setSeeding] = React.useState(false);
   const { profile } = state.settings;
 
-  function handleReset() {
-    resetData();
-    router.push("/");
-    toast({
-      tone: "success",
-      title: "Demo data restored",
-      description: "Websites, audits and issues are back to their seeded state.",
-    });
+  const displayName = profile.name || profile.email || "Your account";
+
+  async function handleSeed() {
+    setSeeding(true);
+    const result = await seedDemoData();
+    setSeeding(false);
+
+    toast(
+      result.ok
+        ? {
+            tone: "success",
+            title: "Demo data added",
+            description: "Eight sample websites with audit history are now in your workspace.",
+          }
+        : { tone: "warning", title: "Couldn't add demo data", description: result.error },
+    );
   }
 
   return (
@@ -39,10 +49,10 @@ export function UserMenu() {
           aria-label="Account menu"
         >
           <span className="flex size-7 items-center justify-center rounded-md bg-gradient-to-br from-primary to-accent font-mono text-[11px] font-semibold text-white">
-            {initialsFrom(profile.name)}
+            {initialsFrom(displayName)}
           </span>
           <span className="hidden max-w-28 truncate text-xs font-medium text-foreground sm:block">
-            {profile.name}
+            {displayName}
           </span>
           <ChevronDown className="size-3.5 shrink-0 text-subtle-foreground" />
         </button>
@@ -51,12 +61,14 @@ export function UserMenu() {
       <DropdownMenuContent align="end" className="w-64">
         <div className="px-2.5 py-2">
           <p className="truncate text-sm font-medium text-foreground">
-            {profile.name}
+            {displayName}
           </p>
           <p className="truncate text-xs text-muted-foreground">{profile.email}</p>
-          <p className="mt-1 text-[11px] text-subtle-foreground">
-            {profile.role} · {profile.company}
-          </p>
+          {profile.role || profile.company ? (
+            <p className="mt-1 truncate text-[11px] text-subtle-foreground">
+              {[profile.role, profile.company].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
         </div>
 
         <DropdownMenuSeparator />
@@ -74,22 +86,34 @@ export function UserMenu() {
           </Link>
         </DropdownMenuItem>
 
+        {canSeedDemoData ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(event) => {
+                // Keep the menu open while the request is in flight.
+                event.preventDefault();
+                void handleSeed();
+              }}
+              disabled={seeding}
+            >
+              {seeding ? <Loader2 className="animate-spin" /> : <DatabaseZap />}
+              {seeding ? "Adding demo data…" : "Load demo data"}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem onSelect={handleReset}>
-          <RotateCcw />
-          Reset demo data
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled>
-          <LogOut />
-          Sign out
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-        <p className="px-2.5 py-1.5 text-[11px] leading-relaxed text-subtle-foreground">
-          This build runs unauthenticated on local data. Accounts and sign-out
-          arrive with the API integration phase.
-        </p>
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-danger outline-none select-none hover:bg-danger/12 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-danger"
+          >
+            <LogOut />
+            Sign out
+          </button>
+        </form>
       </DropdownMenuContent>
     </DropdownMenu>
   );

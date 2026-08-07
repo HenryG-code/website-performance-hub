@@ -4,9 +4,11 @@ import * as React from "react";
 import {
   Bell,
   Database,
+  DatabaseZap,
   Info,
-  RotateCcw,
+  Loader2,
   Save,
+  ShieldCheck,
   SlidersHorizontal,
   UserRound,
 } from "lucide-react";
@@ -25,11 +27,12 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/shared/page-header";
 import { useAppStore } from "@/lib/store/app-store";
-import { STORAGE_KEY } from "@/lib/constants";
+import { profileSchema } from "@/lib/validation";
 import type {
   Device,
   NotificationPreferences,
   Settings,
+  SettingsPatch,
   UserProfile,
 } from "@/types";
 
@@ -78,11 +81,13 @@ const NOTIFICATION_ORDER = Object.keys(
 ) as (keyof NotificationPreferences)[];
 
 export default function SettingsPage() {
-  const { state, updateSettings, resetData } = useAppStore();
+  const { state, updateSettings, seedDemoData, canSeedDemoData } = useAppStore();
   const { toast } = useToast();
 
   const [profile, setProfile] = React.useState<UserProfile>(state.settings.profile);
   const [profileError, setProfileError] = React.useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = React.useState(false);
+  const [seeding, setSeeding] = React.useState(false);
 
   // The form edits a local draft. If the stored profile is replaced underneath
   // it — a reset, or a save from another tab — discard the draft and start
@@ -98,49 +103,86 @@ export default function SettingsPage() {
   const dirty =
     JSON.stringify(profile) !== JSON.stringify(state.settings.profile);
 
-  function saveProfile(event: React.FormEvent) {
+  async function saveProfile(event: React.FormEvent) {
     event.preventDefault();
 
-    if (profile.name.trim().length < 2) {
-      setProfileError("Enter your name.");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email.trim())) {
-      setProfileError("Enter a valid email address.");
+    const parsed = profileSchema.safeParse({
+      name: profile.name,
+      role: profile.role,
+      company: profile.company,
+      timezone: profile.timezone,
+    });
+
+    if (!parsed.success) {
+      setProfileError(parsed.error.issues[0]?.message ?? "Check the form.");
       return;
     }
 
     setProfileError(null);
-    updateSettings({
-      profile: {
-        ...profile,
-        name: profile.name.trim(),
-        email: profile.email.trim(),
-      },
-    });
+    setSavingProfile(true);
+    const result = await updateSettings({ profile: parsed.data });
+    setSavingProfile(false);
+
+    if (!result.ok) {
+      setProfileError(result.error);
+      return;
+    }
     toast({ tone: "success", title: "Profile saved" });
   }
 
-  function toggleNotification(key: keyof NotificationPreferences, value: boolean) {
-    updateSettings({ notifications: { [key]: value } });
-    toast({
-      tone: "info",
-      title: `${NOTIFICATION_COPY[key].label} ${value ? "enabled" : "disabled"}`,
-    });
+  async function toggleNotification(
+    key: keyof NotificationPreferences,
+    value: boolean,
+  ) {
+    const result = await updateSettings({ notifications: { [key]: value } });
+
+    toast(
+      result.ok
+        ? {
+            tone: "info",
+            title: `${NOTIFICATION_COPY[key].label} ${value ? "enabled" : "disabled"}`,
+          }
+        : {
+            tone: "warning",
+            title: "Couldn't save that preference",
+            description: result.error,
+          },
+    );
   }
 
-  function updateAuditDefaults(patch: Partial<Settings>) {
-    updateSettings(patch);
-    toast({ tone: "success", title: "Audit defaults updated" });
+  async function updateAuditDefaults(patch: SettingsPatch) {
+    const result = await updateSettings(patch);
+
+    toast(
+      result.ok
+        ? { tone: "success", title: "Audit defaults updated" }
+        : {
+            tone: "warning",
+            title: "Couldn't save that setting",
+            description: result.error,
+          },
+    );
   }
 
-  function handleReset() {
-    resetData();
-    toast({
-      tone: "success",
-      title: "Demo data restored",
-      description: "All websites, audits, issues and settings are back to defaults.",
-    });
+  async function handleSeed() {
+    setSeeding(true);
+    const result = await seedDemoData();
+    setSeeding(false);
+
+    toast(
+      result.ok
+        ? {
+            tone: "success",
+            title: "Demo data added",
+            description:
+              "Eight sample websites with audit history are now in your workspace.",
+          }
+        : {
+            tone: "warning",
+            title: "Couldn't add demo data",
+            description: result.error,
+          },
+    );
   }
 
   return (
@@ -172,14 +214,22 @@ export default function SettingsPage() {
                       autoComplete="name"
                     />
                   </Field>
-                  <Field label="Email" htmlFor="profile-email" required>
+                  {/*
+                    Email is the account identifier, owned by Supabase Auth.
+                    Changing it needs a confirmation round-trip to both the old
+                    and new address, so it is read-only until that flow exists.
+                  */}
+                  <Field
+                    label="Email"
+                    htmlFor="profile-email"
+                    hint="Used to sign in. Contact support to change it."
+                  >
                     <Input
                       id="profile-email"
                       type="email"
                       value={profile.email}
-                      onChange={(event) =>
-                        setProfile({ ...profile, email: event.target.value })
-                      }
+                      readOnly
+                      disabled
                       autoComplete="email"
                     />
                   </Field>
@@ -235,9 +285,9 @@ export default function SettingsPage() {
                 ) : null}
               </CardContent>
               <CardFooter className="justify-end">
-                <Button type="submit" disabled={!dirty}>
-                  <Save />
-                  Save changes
+                <Button type="submit" disabled={!dirty || savingProfile}>
+                  {savingProfile ? <Loader2 className="animate-spin" /> : <Save />}
+                  {savingProfile ? "Saving…" : "Save changes"}
                 </Button>
               </CardFooter>
             </form>
@@ -275,8 +325,8 @@ export default function SettingsPage() {
             <CardFooter>
               <p className="flex items-start gap-2 text-xs text-subtle-foreground">
                 <Info className="mt-px size-3.5 shrink-0" />
-                Preferences are saved locally. Email and Slack delivery arrive with
-                the notification service in a later phase.
+                Preferences are saved to your account. Email and Slack delivery
+                arrive with the notification service in a later phase.
               </p>
             </CardFooter>
           </Card>
@@ -343,7 +393,9 @@ export default function SettingsPage() {
                   step={5}
                   value={state.settings.scoreThreshold}
                   onChange={(event) =>
-                    updateSettings({ scoreThreshold: Number(event.target.value) })
+                    void updateSettings({
+                      scoreThreshold: Number(event.target.value),
+                    })
                   }
                   className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-border accent-[var(--color-primary)]"
                 />
@@ -351,33 +403,95 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Data */}
+          {/* Report branding */}
+          <Card>
+            <CardToolbar
+              title="Report defaults"
+              description="Used on the reports you generate"
+              action={<Database className="size-4 text-subtle-foreground" />}
+            />
+            <CardContent className="space-y-4">
+              <Field
+                label="Report title"
+                htmlFor="report-title"
+                hint="Heading shown at the top of every report."
+              >
+                <Input
+                  id="report-title"
+                  defaultValue={state.settings.reportTitle}
+                  onBlur={(event) => {
+                    const value = event.target.value.trim();
+                    if (value && value !== state.settings.reportTitle) {
+                      void updateAuditDefaults({ reportTitle: value });
+                    }
+                  }}
+                />
+              </Field>
+
+              <Field
+                label="Brand name"
+                htmlFor="report-brand"
+                hint="Appears as the organisation preparing the report."
+              >
+                <Input
+                  id="report-brand"
+                  defaultValue={state.settings.brandName}
+                  placeholder="Your agency"
+                  onBlur={(event) => {
+                    const value = event.target.value.trim();
+                    if (value !== state.settings.brandName) {
+                      void updateAuditDefaults({ brandName: value });
+                    }
+                  }}
+                />
+              </Field>
+            </CardContent>
+          </Card>
+
+          {/* Workspace data */}
           <Card>
             <CardToolbar
               title="Workspace data"
-              description="Where this build keeps your changes"
-              action={<Database className="size-4 text-subtle-foreground" />}
+              description="Where your data lives"
+              action={<ShieldCheck className="size-4 text-subtle-foreground" />}
             />
             <CardContent className="space-y-3 text-xs leading-relaxed text-muted-foreground">
               <p>
-                Websites, audits, issue statuses and these settings are persisted
-                to <code className="font-mono text-foreground">localStorage</code>{" "}
-                under{" "}
-                <code className="font-mono text-foreground">{STORAGE_KEY}</code>.
-                Nothing leaves your browser and no credentials are needed.
+                Your websites, audits, issues and preferences are stored in
+                Postgres and scoped to your account by Row Level Security — no
+                other user can read or change them.
               </p>
               <p>
-                Resetting restores the seeded demo dataset — {state.websites.length}{" "}
-                websites, {state.audits.length} audits and {state.issues.length}{" "}
-                findings.
+                This workspace currently holds {state.websites.length} website
+                {state.websites.length === 1 ? "" : "s"}, {state.audits.length}{" "}
+                audit{state.audits.length === 1 ? "" : "s"} and{" "}
+                {state.issues.length} finding
+                {state.issues.length === 1 ? "" : "s"}.
               </p>
+              {canSeedDemoData ? (
+                <p className="text-subtle-foreground">
+                  Development build: you can load a sample dataset to explore the
+                  dashboard. This is unavailable in production.
+                </p>
+              ) : null}
             </CardContent>
-            <CardFooter>
-              <Button variant="danger" onClick={handleReset} className="w-full">
-                <RotateCcw />
-                Reset demo data
-              </Button>
-            </CardFooter>
+            {canSeedDemoData ? (
+              <CardFooter>
+                <Button
+                  variant="outline"
+                  onClick={handleSeed}
+                  className="w-full"
+                  disabled={seeding}
+                >
+                  {seeding ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <DatabaseZap />
+                  )}
+                  {seeding ? "Adding demo data…" : "Load demo data"}
+                </Button>
+              </CardFooter>
+            ) : null}
           </Card>
         </div>
       </div>

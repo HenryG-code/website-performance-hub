@@ -7,9 +7,11 @@ import { useToast } from "@/components/ui/toast";
 import { useAppStore } from "@/lib/store/app-store";
 
 /**
- * Kicks off a simulated audit. The store creates a `running` audit immediately,
- * then resolves it a couple of seconds later with new scores, a fresh trend
- * point and possibly a new finding — so the whole UI updates from one click.
+ * Kicks off a simulated audit.
+ *
+ * The run is written to Supabase as `running` straight away, then resolved a
+ * couple of seconds later with scores, lab metrics and any new findings — so
+ * the result survives a reload and shows up on every device.
  */
 export function RunAuditButton({
   websiteIds,
@@ -27,9 +29,10 @@ export function RunAuditButton({
 }) {
   const { runAudit, isAuditing, state } = useAppStore();
   const { toast } = useToast();
+  const [starting, setStarting] = React.useState(false);
 
   const running = websiteIds.some(isAuditing);
-  const disabled = running || websiteIds.length === 0;
+  const disabled = running || starting || websiteIds.length === 0;
 
   const resolvedLabel =
     label ??
@@ -37,14 +40,27 @@ export function RunAuditButton({
       ? "Run audit"
       : `Run audit on ${websiteIds.length} sites`);
 
-  function handleClick() {
-    const started = websiteIds.filter((id) => runAudit(id) !== null);
-    if (started.length === 0) return;
+  async function handleClick() {
+    setStarting(true);
+    const results = await Promise.all(websiteIds.map((id) => runAudit(id)));
+    setStarting(false);
+
+    const started = results.filter((result) => result.ok).length;
+
+    if (started === 0) {
+      const failure = results.find((result) => !result.ok);
+      toast({
+        tone: "warning",
+        title: "Couldn't start the audit",
+        description: failure && !failure.ok ? failure.error : undefined,
+      });
+      return;
+    }
 
     const name =
-      started.length === 1
-        ? (state.websites.find((w) => w.id === started[0])?.name ?? "website")
-        : `${started.length} websites`;
+      started === 1
+        ? (state.websites.find((w) => w.id === websiteIds[0])?.name ?? "website")
+        : `${started} websites`;
 
     toast({
       tone: "info",
@@ -62,8 +78,8 @@ export function RunAuditButton({
       className={className}
       aria-live="polite"
     >
-      {running ? <Loader2 className="animate-spin" /> : <Play />}
-      {running ? "Running audit…" : resolvedLabel}
+      {running || starting ? <Loader2 className="animate-spin" /> : <Play />}
+      {running || starting ? "Running audit…" : resolvedLabel}
     </Button>
   );
 }

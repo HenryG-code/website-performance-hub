@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import {
   Dialog,
   DialogBody,
@@ -26,7 +26,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAppStore } from "@/lib/store/app-store";
-import { normaliseUrl } from "@/lib/store/reducer";
+import { fieldErrors, websiteInputSchema } from "@/lib/validation";
 import { displayUrl } from "@/lib/format";
 import type { Environment } from "@/types";
 
@@ -48,47 +48,41 @@ const EMPTY: FormState = {
   tags: "",
 };
 
-/** Hostname with at least one dot, optional path — deliberately permissive. */
-const HOSTNAME = /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[^\s]*)?$/i;
+function toInput(values: FormState) {
+  return {
+    name: values.name.trim(),
+    url: values.url.trim(),
+    team: values.team.trim(),
+    environment: values.environment,
+    tags: values.tags
+      .split(",")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 5),
+  };
+}
 
-export function validate(values: FormState, existingUrls: string[]): Errors {
-  const errors: Errors = {};
+/**
+ * Client-side validation mirrors the server schema so mistakes surface before a
+ * round-trip. The duplicate check is best-effort here — the authoritative one
+ * is the `(owner_id, url)` unique constraint, whose violation the action maps
+ * back onto the URL field.
+ */
+function validate(values: FormState, existingUrls: string[]): Errors {
+  const parsed = websiteInputSchema.safeParse(toInput(values));
+  const errors: Errors = parsed.success ? {} : fieldErrors(parsed.error);
 
-  const name = values.name.trim();
-  if (!name) errors.name = "Give the website a name.";
-  else if (name.length < 2) errors.name = "Use at least 2 characters.";
-  else if (name.length > 60) errors.name = "Keep the name under 60 characters.";
-
-  const rawUrl = values.url.trim();
-  if (!rawUrl) {
-    errors.url = "Enter the address you want to monitor.";
-  } else {
-    const withoutProtocol = rawUrl.replace(/^https?:\/\//i, "");
-    if (!HOSTNAME.test(withoutProtocol)) {
-      errors.url = "Enter a valid domain, for example acme.com or www.acme.com/uk.";
-    } else if (
-      existingUrls.some(
-        (url) =>
-          displayUrl(url).toLowerCase() ===
-          displayUrl(normaliseUrl(rawUrl)).toLowerCase(),
-      )
-    ) {
+  if (!errors.url && values.url.trim()) {
+    const candidate = displayUrl(values.url.trim()).toLowerCase();
+    if (existingUrls.some((url) => displayUrl(url).toLowerCase() === candidate)) {
       errors.url = "That website is already being monitored.";
     }
-  }
-
-  if (values.team.trim().length > 40) {
-    errors.team = "Keep the team name under 40 characters.";
   }
 
   return errors;
 }
 
-export function AddWebsiteDialog({
-  trigger,
-}: {
-  trigger?: React.ReactNode;
-}) {
+export function AddWebsiteDialog({ trigger }: { trigger?: React.ReactNode }) {
   const { state, addWebsite, runAudit } = useAppStore();
   const { toast } = useToast();
   const router = useRouter();
@@ -96,7 +90,9 @@ export function AddWebsiteDialog({
   const [open, setOpen] = React.useState(false);
   const [values, setValues] = React.useState<FormState>(EMPTY);
   const [errors, setErrors] = React.useState<Errors>({});
-  const [touched, setTouched] = React.useState<Partial<Record<keyof FormState, boolean>>>({});
+  const [touched, setTouched] = React.useState<
+    Partial<Record<keyof FormState, boolean>>
+  >({});
   const [auditNow, setAuditNow] = React.useState(true);
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -108,7 +104,6 @@ export function AddWebsiteDialog({
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     const next = { ...values, [key]: value };
     setValues(next);
-    // Re-validate live once a field has been interacted with.
     if (touched[key]) setErrors(validate(next, existingUrls));
   }
 
@@ -125,31 +120,35 @@ export function AddWebsiteDialog({
     setSubmitting(false);
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+
     const nextErrors = validate(values, existingUrls);
     setErrors(nextErrors);
     setTouched({ name: true, url: true, team: true });
     if (Object.keys(nextErrors).length > 0) return;
 
     setSubmitting(true);
-    const id = addWebsite({
-      name: values.name.trim(),
-      url: values.url.trim(),
-      team: values.team.trim(),
-      environment: values.environment,
-      tags: values.tags
-        .split(",")
-        .map((tag) => tag.trim().toLowerCase())
-        .filter(Boolean)
-        .slice(0, 5),
-    });
+    const result = await addWebsite(toInput(values));
 
-    if (auditNow) runAudit(id);
+    if (!result.ok) {
+      setSubmitting(false);
+      if (result.errors) {
+        setErrors(result.errors as Errors);
+      } else {
+        toast({ tone: "warning", title: "Couldn't add website", description: result.error });
+      }
+      return;
+    }
+
+    const id = result.data!.id;
+    const name = values.name.trim();
+
+    if (auditNow) void runAudit(id);
 
     toast({
       tone: "success",
-      title: `${values.name.trim()} added`,
+      title: `${name} added`,
       description: auditNow
         ? "A first audit is running now — scores appear in a moment."
         : "Run an audit when you're ready to collect its first scores.",
@@ -299,8 +298,8 @@ export function AddWebsiteDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={submitting}>
-              <Plus />
-              Add website
+              {submitting ? <Loader2 className="animate-spin" /> : <Plus />}
+              {submitting ? "Adding…" : "Add website"}
             </Button>
           </DialogFooter>
         </form>

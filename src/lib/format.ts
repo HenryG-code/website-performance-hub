@@ -1,5 +1,3 @@
-import { REFERENCE_NOW } from "./constants";
-
 const MONTHS = [
   "Jan",
   "Feb",
@@ -49,13 +47,13 @@ export function formatTime(value: string | Date): string {
 }
 
 /**
- * Relative time measured against the fixed reference clock. Future timestamps
- * (audits created during this session) clamp to "Just now" rather than
- * rendering a negative interval.
+ * Relative time against the real clock, now that timestamps come from the
+ * database rather than a generated dataset. Future timestamps clamp to
+ * "Just now" rather than rendering a negative interval.
  */
 export function formatRelative(value: string | Date): string {
   const d = toDate(value);
-  const diff = REFERENCE_NOW.getTime() - d.getTime();
+  const diff = Date.now() - d.getTime();
   if (diff < 60_000) return "Just now";
 
   const minutes = Math.floor(diff / 60_000);

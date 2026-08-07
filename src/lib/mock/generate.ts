@@ -5,15 +5,28 @@ import type {
   AuditStatus,
   Issue,
   IssueStatus,
-  PersistedState,
   ScoreKey,
   Scores,
-  Settings,
   TrendPoint,
   UptimeDay,
   WebVitals,
   Website,
 } from "@/types";
+
+/**
+ * Demo dataset used by the development seed action.
+ *
+ * Phase 1 rendered this straight into the UI. It is now only a source of
+ * plausible rows to write into Postgres for a development account — the app
+ * itself always reads real data.
+ */
+export interface SeedDataset {
+  websites: Website[];
+  audits: Audit[];
+  issues: Issue[];
+  trends: Record<string, TrendPoint[]>;
+  uptime: Record<string, UptimeDay[]>;
+}
 import { ISSUE_TEMPLATES, type IssueTemplate } from "./catalog";
 import { clamp, createRng, hashSeed, type Rng } from "./random";
 
@@ -457,36 +470,14 @@ function buildIssue(
   };
 }
 
-export const DEFAULT_SETTINGS: Settings = {
-  profile: {
-    name: "Jordan Ellis",
-    email: "jordan.ellis@northlight.agency",
-    role: "Performance Lead",
-    company: "Northlight Digital",
-    timezone: "UTC",
-  },
-  notifications: {
-    auditCompleted: true,
-    criticalIssues: true,
-    uptimeIncidents: true,
-    weeklyDigest: true,
-    scoreDrops: false,
-    productUpdates: false,
-  },
-  auditFrequency: "daily",
-  defaultDevice: "desktop",
-  scoreThreshold: 70,
-};
-
 /**
- * Builds the full mock dataset. Deterministic: calling this on the server and
- * in the browser produces identical output.
+ * Builds the full demo dataset. Deterministic — the same seed always produces
+ * the same websites, audits and findings.
  */
-export function createSeedState(): PersistedState {
+export function createSeedState(): SeedDataset {
   const built = SITE_SEEDS.map(buildSite);
 
   return {
-    version: 1,
     websites: built.map((b) => b.website),
     audits: built
       .flatMap((b) => b.audits)
@@ -497,6 +488,5 @@ export function createSeedState(): PersistedState {
     issues: built.flatMap((b) => b.issues),
     trends: Object.fromEntries(built.map((b) => [b.website.id, b.trend])),
     uptime: Object.fromEntries(built.map((b) => [b.website.id, b.uptime])),
-    settings: DEFAULT_SETTINGS,
   };
 }

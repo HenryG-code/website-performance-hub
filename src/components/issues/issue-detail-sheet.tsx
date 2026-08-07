@@ -54,14 +54,24 @@ export function IssueDetailSheet({
     ? state.audits.find((a) => a.id === issue.auditId)
     : undefined;
 
-  function changeStatus(next: IssueStatus) {
+  async function changeStatus(next: IssueStatus) {
     if (!issue || issue.status === next) return;
-    setIssueStatus(issue.id, next);
-    toast({
-      tone: next === "resolved" ? "success" : "info",
-      title: `Marked as ${STATUS_LABELS[next]}`,
-      description: issue.title,
-    });
+
+    const result = await setIssueStatus(issue.id, next);
+
+    toast(
+      result.ok
+        ? {
+            tone: next === "resolved" ? "success" : "info",
+            title: `Marked as ${STATUS_LABELS[next]}`,
+            description: issue.title,
+          }
+        : {
+            tone: "warning",
+            title: "Couldn't update that issue",
+            description: result.error,
+          },
+    );
   }
 
   return (
