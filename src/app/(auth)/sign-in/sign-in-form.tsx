@@ -67,6 +67,7 @@ export function SignInForm() {
             autoComplete="email"
             placeholder="you@company.com"
             aria-invalid={Boolean(errors.email)}
+            inputSize="lg"
             autoFocus
           />
         </Field>

@@ -223,7 +223,13 @@ export default function WebsiteDetailPage({
       <AuditFailureNotice website={website} />
 
       <section
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
+        /*
+          Five compact tiles. Two columns from 640px to 1279px left the fifth
+          stranded beside an empty cell across most tablet and laptop widths,
+          so a three-column step is added in between. Two columns on phones
+          rather than one keeps the row from becoming a long scroll.
+        */
+        className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5"
         aria-label="Overview metrics"
       >
         <StatTile

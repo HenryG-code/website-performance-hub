@@ -15,8 +15,13 @@ export function AuthHeading({
   description: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">
+    <div className="space-y-2">
+      {/*
+        Sized above the supporting copy in the right-hand column. The form is
+        the task on this screen; when both sat at the same weight the marketing
+        panel read as the primary heading, which inverted the hierarchy.
+      */}
+      <h1 className="text-2xl font-semibold tracking-tight text-foreground">
         {title}
       </h1>
       <p className="text-sm leading-relaxed text-muted-foreground text-balance">
@@ -92,6 +97,7 @@ export function PasswordField({
           type={visible ? "text" : "password"}
           autoComplete={autoComplete}
           aria-invalid={Boolean(error)}
+          inputSize="lg"
           className={cn("pr-10")}
         />
         <button

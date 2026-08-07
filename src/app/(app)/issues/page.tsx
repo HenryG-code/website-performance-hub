@@ -125,7 +125,7 @@ function IssuesView({
         description="Every finding raised by an audit, ranked by severity. Update status as your team works through them — changes are saved locally."
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label="Open issues" value={open.length} icon={Bug} />
         <StatTile
           label="Critical"

@@ -14,11 +14,15 @@ export function Logo({
         <Activity className="size-4.5 text-white" strokeWidth={2.5} />
       </span>
       {showWordmark ? (
-        <span className="flex flex-col leading-none">
-          <span className="text-sm font-semibold tracking-tight text-foreground">
+        <span className="flex flex-col">
+          <span className="text-sm leading-5 font-semibold tracking-tight text-foreground">
             PerformanceHub
           </span>
-          <span className="mt-0.5 text-[10px] tracking-wide text-subtle-foreground uppercase">
+          {/*
+            Uppercase at 10px needs its own line box and wider tracking to stay
+            readable; `leading-none` on the parent squashed it to a 10px line.
+          */}
+          <span className="text-[10px] leading-[1.4] tracking-[0.14em] text-subtle-foreground uppercase">
             Website health
           </span>
         </span>

@@ -1,4 +1,4 @@
-import { Skeleton, SkeletonCard, SkeletonTable } from "@/components/ui/skeleton";
+﻿import { Skeleton, SkeletonCard, SkeletonTable } from "@/components/ui/skeleton";
 
 /**
  * Route-level loading skeletons. Each variant mirrors the layout of the page it
@@ -23,7 +23,7 @@ export function PageSkeleton({
               <SkeletonCard key={i} className="h-52" />
             ))}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <SkeletonCard key={i} className="h-40" />
             ))}
@@ -37,7 +37,7 @@ export function PageSkeleton({
 
       {variant === "table" ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <SkeletonCard key={i} className="h-28" />
             ))}
@@ -49,7 +49,7 @@ export function PageSkeleton({
 
       {variant === "detail" ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
               <SkeletonCard key={i} className="h-28" />
             ))}
