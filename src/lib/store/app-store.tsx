@@ -4,140 +4,162 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
+  useTransition,
 } from "react";
-import { STORAGE_KEY, STORAGE_VERSION } from "@/lib/constants";
-import { createSeedState } from "@/lib/mock/generate";
-import type { IssueStatus, PersistedState, SettingsPatch } from "@/types";
-import { reducer, type Action, type NewWebsiteInput } from "./reducer";
-
-/** How long a simulated audit takes before it resolves. */
-const AUDIT_DURATION_MS = 2600;
+import { useRouter } from "next/navigation";
+import { createWebsite, deleteWebsite, updateWebsite } from "@/app/actions/websites";
+import { completeAudit, startAudit } from "@/app/actions/audits";
+import { setIssueStatus as setIssueStatusAction } from "@/app/actions/issues";
+import {
+  updateNotifications,
+  updateProfile,
+  updateReportPreferences,
+} from "@/app/actions/settings";
+import { seedDemoWorkspace } from "@/app/actions/dev-seed";
+import { AUDIT_SIMULATION_MS } from "@/lib/audit/simulate";
+import type { ActionResult } from "@/app/actions/types";
+import type { WebsiteInput } from "@/lib/validation";
+import type { AppState, Issue, IssueStatus, SettingsPatch } from "@/types";
 
 interface AppStoreValue {
-  state: PersistedState;
-  /** False during the first client render, before localStorage is read. */
-  hydrated: boolean;
-  addWebsite: (input: NewWebsiteInput) => string;
-  removeWebsite: (id: string) => void;
-  runAudit: (websiteId: string) => string | null;
+  /** The signed-in user's workspace, loaded server-side on every navigation. */
+  state: AppState;
+  /** True while any mutation or refresh is in flight. */
+  pending: boolean;
+  addWebsite: (input: WebsiteInput) => Promise<ActionResult<{ id: string }>>;
+  editWebsite: (id: string, input: WebsiteInput) => Promise<ActionResult>;
+  removeWebsite: (id: string) => Promise<ActionResult>;
+  runAudit: (websiteId: string) => Promise<ActionResult>;
   isAuditing: (websiteId: string) => boolean;
-  setIssueStatus: (id: string, status: IssueStatus) => void;
-  updateSettings: (patch: SettingsPatch) => void;
-  resetData: () => void;
+  setIssueStatus: (id: string, status: IssueStatus) => Promise<ActionResult>;
+  updateSettings: (patch: SettingsPatch) => Promise<ActionResult>;
+  /** Development helper; disabled in production builds. */
+  seedDemoData: () => Promise<ActionResult>;
+  canSeedDemoData: boolean;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
 
-/**
- * The initial state is the deterministic seed on both server and client, so the
- * first paint matches the SSR output exactly. Persisted state is merged in from
- * localStorage in an effect immediately afterwards.
- */
-function loadPersisted(): PersistedState | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as PersistedState;
-    if (parsed?.version !== STORAGE_VERSION) return null;
-    if (!Array.isArray(parsed.websites)) return null;
-    return parsed;
-  } catch {
-    // Corrupt or unavailable storage falls back to the seed dataset.
-    return null;
-  }
-}
+const CAN_SEED = process.env.NODE_ENV !== "production";
 
-interface StoreState {
-  data: PersistedState;
-  hydrated: boolean;
-}
+export function AppStoreProvider({
+  initialState,
+  children,
+}: {
+  initialState: AppState;
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
 
-/**
- * Wraps the domain reducer with the hydration flag, so reading localStorage on
- * mount is a single dispatch rather than a separate `setState` in an effect.
- */
-function storeReducer(state: StoreState, action: Action): StoreState {
-  if (action.type === "hydrate") {
-    return { data: action.state ?? state.data, hydrated: true };
-  }
-  return { ...state, data: reducer(state.data, action) };
-}
-
-function initialStore(): StoreState {
-  return { data: createSeedState(), hydrated: false };
-}
-
-export function AppStoreProvider({ children }: { children: React.ReactNode }) {
-  const [store, dispatch] = useReducer(storeReducer, undefined, initialStore);
   const [runningSites, setRunningSites] = useState<string[]>([]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const { data: state, hydrated } = store;
+  /**
+   * Issue-status edits applied locally the instant they are made.
+   *
+   * A server round-trip plus `router.refresh()` takes long enough that a select
+   * would visibly snap back to its old value first. The override is dropped as
+   * soon as the refreshed server data agrees with it.
+   */
+  const [statusOverrides, setStatusOverrides] = useState<
+    Record<string, IssueStatus>
+  >({});
 
-  useEffect(() => {
-    dispatch({ type: "hydrate", state: loadPersisted() });
-  }, []);
+  const state = useMemo<AppState>(() => {
+    if (Object.keys(statusOverrides).length === 0) return initialState;
 
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Quota errors are non-fatal — the app keeps working in memory.
-    }
-  }, [state, hydrated]);
+    return {
+      ...initialState,
+      issues: initialState.issues.map((issue): Issue => {
+        const override = statusOverrides[issue.id];
+        return override && override !== issue.status
+          ? { ...issue, status: override }
+          : issue;
+      }),
+    };
+  }, [initialState, statusOverrides]);
 
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach(clearTimeout);
-  }, []);
-
-  const addWebsite = useCallback((input: NewWebsiteInput) => {
-    const id = `wsite-${Date.now().toString(36)}`;
-    dispatch({
-      type: "website/add",
-      input,
-      id,
-      at: new Date().toISOString(),
+  // Once the server confirms an override, stop overlaying it.
+  const settled = Object.entries(statusOverrides).filter(([id, status]) =>
+    initialState.issues.some(
+      (issue) => issue.id === id && issue.status === status,
+    ),
+  );
+  if (settled.length > 0) {
+    setStatusOverrides((prev) => {
+      const next = { ...prev };
+      for (const [id] of settled) delete next[id];
+      return next;
     });
-    return id;
-  }, []);
+  }
 
-  const removeWebsite = useCallback((id: string) => {
-    dispatch({ type: "website/remove", id });
-  }, []);
+  const refresh = useCallback(() => {
+    startTransition(() => router.refresh());
+  }, [router]);
 
+  const addWebsite = useCallback(
+    async (input: WebsiteInput) => {
+      const result = await createWebsite(input);
+      if (result.ok) refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const editWebsite = useCallback(
+    async (id: string, input: WebsiteInput) => {
+      const result = await updateWebsite(id, input);
+      if (result.ok) refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const removeWebsite = useCallback(
+    async (id: string) => {
+      const result = await deleteWebsite(id);
+      if (result.ok) refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  /**
+   * Two-phase run: the `running` row appears immediately, then resolves after a
+   * short delay. The delay is cosmetic for now — when real Lighthouse runs
+   * arrive, the completion step becomes a webhook or poll instead.
+   */
   const runAudit = useCallback(
-    (websiteId: string) => {
-      if (runningSites.includes(websiteId)) return null;
+    async (websiteId: string): Promise<ActionResult> => {
+      if (runningSites.includes(websiteId)) {
+        return { ok: false, error: "An audit is already running for that site." };
+      }
 
-      const auditId = `audit-run-${Date.now().toString(36)}`;
       setRunningSites((prev) => [...prev, websiteId]);
-      dispatch({
-        type: "audit/start",
-        websiteId,
-        auditId,
-        at: new Date().toISOString(),
-      });
+      const started = await startAudit(websiteId);
 
-      const timer = setTimeout(() => {
-        dispatch({
-          type: "audit/complete",
-          auditId,
-          seed: Math.floor(Math.random() * 2 ** 31),
-        });
+      if (!started.ok) {
         setRunningSites((prev) => prev.filter((id) => id !== websiteId));
-      }, AUDIT_DURATION_MS);
+        return started;
+      }
+
+      refresh();
+      const auditId = started.data!.auditId;
+
+      const timer = setTimeout(async () => {
+        await completeAudit(auditId);
+        setRunningSites((prev) => prev.filter((id) => id !== websiteId));
+        refresh();
+      }, AUDIT_SIMULATION_MS);
 
       timers.current.push(timer);
-      return auditId;
+      return { ok: true };
     },
-    [runningSites],
+    [runningSites, refresh],
   );
 
   const isAuditing = useCallback(
@@ -145,45 +167,95 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [runningSites],
   );
 
-  const setIssueStatus = useCallback((id: string, status: IssueStatus) => {
-    dispatch({
-      type: "issue/status",
-      id,
-      status,
-      at: new Date().toISOString(),
-    });
-  }, []);
+  const setIssueStatus = useCallback(
+    async (id: string, status: IssueStatus) => {
+      setStatusOverrides((prev) => ({ ...prev, [id]: status }));
 
-  const updateSettings = useCallback((patch: SettingsPatch) => {
-    dispatch({ type: "settings/update", patch });
-  }, []);
+      const result = await setIssueStatusAction(id, status);
+      if (!result.ok) {
+        // Roll the optimistic change back so the UI never claims a save that
+        // did not happen.
+        setStatusOverrides((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        return result;
+      }
 
-  const resetData = useCallback(() => {
-    dispatch({ type: "reset", state: createSeedState() });
-  }, []);
+      refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const updateSettings = useCallback(
+    async (patch: SettingsPatch) => {
+      const calls: Promise<ActionResult>[] = [];
+
+      if (patch.profile) calls.push(updateProfile(patch.profile));
+      if (patch.notifications) calls.push(updateNotifications(patch.notifications));
+
+      const reportPatch = {
+        ...(patch.reportTitle !== undefined && { reportTitle: patch.reportTitle }),
+        ...(patch.brandName !== undefined && { brandName: patch.brandName }),
+        ...(patch.auditFrequency !== undefined && {
+          auditFrequency: patch.auditFrequency,
+        }),
+        ...(patch.defaultDevice !== undefined && {
+          defaultDevice: patch.defaultDevice,
+        }),
+        ...(patch.scoreThreshold !== undefined && {
+          scoreThreshold: patch.scoreThreshold,
+        }),
+      };
+      if (Object.keys(reportPatch).length > 0) {
+        calls.push(updateReportPreferences(reportPatch));
+      }
+
+      if (calls.length === 0) return { ok: true } as ActionResult;
+
+      const results = await Promise.all(calls);
+      const failure = results.find((result) => !result.ok);
+      if (failure) return failure;
+
+      refresh();
+      return { ok: true } as ActionResult;
+    },
+    [refresh],
+  );
+
+  const seedDemoData = useCallback(async () => {
+    const result = await seedDemoWorkspace();
+    if (result.ok) refresh();
+    return result;
+  }, [refresh]);
 
   const value = useMemo<AppStoreValue>(
     () => ({
       state,
-      hydrated,
+      pending,
       addWebsite,
+      editWebsite,
       removeWebsite,
       runAudit,
       isAuditing,
       setIssueStatus,
       updateSettings,
-      resetData,
+      seedDemoData,
+      canSeedDemoData: CAN_SEED,
     }),
     [
       state,
-      hydrated,
+      pending,
       addWebsite,
+      editWebsite,
       removeWebsite,
       runAudit,
       isAuditing,
       setIssueStatus,
       updateSettings,
-      resetData,
+      seedDemoData,
     ],
   );
 
@@ -199,5 +271,3 @@ export function useAppStore(): AppStoreValue {
   }
   return ctx;
 }
-
-export type { Action, NewWebsiteInput };

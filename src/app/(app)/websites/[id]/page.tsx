@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Gauge,
   Globe,
+  Loader2,
   Server,
   Timer,
   Trash2,
@@ -79,6 +80,7 @@ export default function WebsiteDetailPage({
 
   const [selectedIssue, setSelectedIssue] = React.useState<Issue | null>(null);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
+  const [removing, setRemoving] = React.useState(false);
 
   const website = state.websites.find((w) => w.id === id);
 
@@ -136,13 +138,25 @@ export default function WebsiteDetailPage({
     ? website.healthScore - trend[trend.length - 31].health
     : 0;
 
-  function handleRemove() {
-    removeWebsite(website!.id);
+  async function handleRemove() {
+    setRemoving(true);
+    const result = await removeWebsite(website!.id);
+    setRemoving(false);
+
+    if (!result.ok) {
+      toast({
+        tone: "warning",
+        title: "Couldn't remove that website",
+        description: result.error,
+      });
+      return;
+    }
+
     setConfirmRemove(false);
     toast({
       tone: "warning",
       title: `${website!.name} removed`,
-      description: "Its audits and issues were removed from this workspace too.",
+      description: "Its audits and issues were deleted along with it.",
     });
     router.push("/websites");
   }
@@ -394,12 +408,16 @@ export default function WebsiteDetailPage({
             menu.
           </DialogBody>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirmRemove(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmRemove(false)}
+              disabled={removing}
+            >
               Cancel
             </Button>
-            <Button variant="danger" onClick={handleRemove}>
-              <Trash2 />
-              Remove website
+            <Button variant="danger" onClick={handleRemove} disabled={removing}>
+              {removing ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              {removing ? "Removing…" : "Remove website"}
             </Button>
           </DialogFooter>
         </DialogContent>

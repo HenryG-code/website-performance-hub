@@ -1,8 +1,8 @@
-import { healthScore, isActive, sortBySeverity } from "@/lib/scores";
+﻿import { healthScore, isActive, sortBySeverity } from "@/lib/scores";
 import type {
   Audit,
   Issue,
-  PersistedState,
+  AppState,
   ScoreKey,
   Scores,
   TrendPoint,
@@ -18,17 +18,17 @@ const SCORE_KEYS: ScoreKey[] = [
 ];
 
 export function getWebsite(
-  state: PersistedState,
+  state: AppState,
   id: string,
 ): Website | undefined {
   return state.websites.find((w) => w.id === id);
 }
 
-export function auditsForWebsite(state: PersistedState, id: string): Audit[] {
+export function auditsForWebsite(state: AppState, id: string): Audit[] {
   return state.audits.filter((a) => a.websiteId === id);
 }
 
-export function issuesForWebsite(state: PersistedState, id: string): Issue[] {
+export function issuesForWebsite(state: AppState, id: string): Issue[] {
   return state.issues.filter((i) => i.websiteId === id);
 }
 
@@ -36,19 +36,19 @@ export function activeIssues(issues: Issue[]): Issue[] {
   return issues.filter(isActive);
 }
 
-export function websiteIssueCount(state: PersistedState, id: string): number {
+export function websiteIssueCount(state: AppState, id: string): number {
   return state.issues.filter((i) => i.websiteId === id && isActive(i)).length;
 }
 
-export function trendFor(state: PersistedState, id: string): TrendPoint[] {
+export function trendFor(state: AppState, id: string): TrendPoint[] {
   return state.trends[id] ?? [];
 }
 
-export function uptimeFor(state: PersistedState, id: string): UptimeDay[] {
+export function uptimeFor(state: AppState, id: string): UptimeDay[] {
   return state.uptime[id] ?? [];
 }
 
-export function websiteName(state: PersistedState, id: string): string {
+export function websiteName(state: AppState, id: string): string {
   return getWebsite(state, id)?.name ?? "Unknown website";
 }
 
@@ -72,7 +72,7 @@ function scoredWebsites(websites: Website[]): Website[] {
 }
 
 export function portfolioSummary(
-  state: PersistedState,
+  state: AppState,
   websiteIds?: string[],
 ): PortfolioSummary {
   const websites = websiteIds
@@ -99,11 +99,8 @@ export function portfolioSummary(
   const trend = aggregateTrend(state, websites.map((w) => w.id));
   const health = scored.length ? healthScore(scores) : 0;
 
-  const thirtyDaysBack = trend[Math.max(0, trend.length - 31)];
-  const healthDelta =
-    trend.length > 1 && thirtyDaysBack
-      ? health - thirtyDaysBack.health
-      : 0;
+  const thirtyDaysBack = baselinePoint(trend, 30);
+  const healthDelta = thirtyDaysBack ? health - thirtyDaysBack.health : 0;
 
   const incidents = websites.reduce(
     (sum, w) =>
@@ -132,7 +129,7 @@ export function portfolioSummary(
  * Sites without history for a given day simply do not contribute to it.
  */
 export function aggregateTrend(
-  state: PersistedState,
+  state: AppState,
   websiteIds: string[],
 ): TrendPoint[] {
   const buckets = new Map<string, { sums: TrendPoint; count: number }>();
@@ -165,13 +162,45 @@ export function aggregateTrend(
     }));
 }
 
-/** Trailing slice of a trend series, e.g. the last 30 days. */
+const DAY_MS = 86_400_000;
+
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Trailing window of a trend series.
+ *
+ * Filters by date rather than by element count: the series now has one point
+ * per day on which an audit ran, so a site audited weekly has ~4 points in a
+ * 30-day window and slicing the last 30 entries would reach back months.
+ */
 export function lastDays(trend: TrendPoint[], days: number): TrendPoint[] {
-  return trend.slice(Math.max(0, trend.length - days));
+  const cutoff = isoDaysAgo(days);
+  return trend.filter((point) => point.date >= cutoff);
+}
+
+/**
+ * The trend point to compare "today" against for an N-day delta: the most
+ * recent point at or before the cutoff, or the oldest point available when the
+ * history is shorter than the window.
+ */
+export function baselinePoint(
+  trend: TrendPoint[],
+  days: number,
+): TrendPoint | undefined {
+  if (trend.length === 0) return undefined;
+
+  const cutoff = isoDaysAgo(days);
+  const atOrBefore = trend.filter((point) => point.date <= cutoff);
+
+  // No point that old means the account has less than `days` of history; the
+  // caller decides whether a partial-window comparison is meaningful.
+  return atOrBefore.length > 0 ? atOrBefore[atOrBefore.length - 1] : undefined;
 }
 
 export function recentAudits(
-  state: PersistedState,
+  state: AppState,
   limit: number,
   websiteIds?: string[],
 ): Audit[] {
@@ -182,7 +211,7 @@ export function recentAudits(
 }
 
 export function priorityIssues(
-  state: PersistedState,
+  state: AppState,
   limit: number,
   websiteIds?: string[],
 ): Issue[] {
@@ -205,7 +234,7 @@ export function categoryBreakdown(
   trend: TrendPoint[],
   issues: Issue[],
 ): CategoryBreakdown[] {
-  const past = trend[Math.max(0, trend.length - 31)];
+  const past = baselinePoint(trend, 30);
   const active = activeIssues(issues);
 
   return SCORE_KEYS.map((key) => ({
@@ -217,3 +246,4 @@ export function categoryBreakdown(
     ).length,
   }));
 }
+

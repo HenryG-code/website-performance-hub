@@ -4,31 +4,78 @@ A website-health dashboard for owners and agencies. PerformanceHub brings
 performance, SEO, accessibility, best-practice, uptime and issue-tracking data
 for every site you manage into one place.
 
-**This is phase 1: a complete, working application shell backed entirely by
-local mock data.** There are no external API calls and no credentials — clone,
-install, run.
+**Phase 2: a secure, persistent, multi-user product.** Users sign up, sign in
+and see only their own websites, audits, issues and settings — enforced by
+Postgres Row Level Security, not just by application code.
+
+Audit *execution* is still simulated (no page is actually fetched), but every
+result it produces is written to Postgres and survives reloads and devices.
 
 ---
 
 ## Getting started
 
-Requires Node.js 20 or newer.
+Requires Node.js 20 or newer and a Supabase project.
+
+### 1. Install
 
 ```bash
 npm install
 ```
 
+### 2. Configure environment
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in from **Supabase dashboard → Project Settings → API**:
+
+| Variable | What it is |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project API URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable ("anon") key |
+| `NEXT_PUBLIC_SITE_URL` | Origin used in confirmation and reset emails |
+
+The anon key is safe in the browser: it grants no privileges of its own, and
+every table is protected by RLS. **The service-role key is never used by this
+application and must not be added** — it bypasses RLS entirely.
+
+### 3. Apply migrations
+
+Migrations live in `supabase/migrations/` and are applied in filename order.
+
+With the Supabase CLI:
+
+```bash
+npx supabase link --project-ref <your-project-ref>
+```
+
+```bash
+npx supabase db push
+```
+
+Or paste each file into the dashboard SQL editor, oldest first.
+
+### 4. Configure auth redirects
+
+In **Authentication → URL Configuration**, add `http://localhost:3000/auth/callback`
+(and your deployed equivalent) to the allowed redirect URLs. Confirmation and
+password-reset links both land there.
+
+### 5. Run
+
 ```bash
 npm run dev
 ```
 
-Then open <http://localhost:3000>.
+Open <http://localhost:3000>, create an account, and add your first website.
 
 ### Scripts
 
 | Script | What it does |
 | --- | --- |
-| `npm run dev` | Start the dev server on port 3000 |
+| `npm run dev` | Dev server on port 3000 |
 | `npm run build` | Production build (type-checked) |
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint across the project |
@@ -36,88 +83,129 @@ Then open <http://localhost:3000>.
 
 ---
 
-## What's in it
+## Authentication
 
-### Dashboard (`/`)
+Email and password, via Supabase Auth.
 
-- Overall health score as a gauge, with its 30-day change
-- Four category cards — Performance, SEO, Accessibility, Best Practices — each
-  with score, delta, sparkline and open-finding count
-- Uptime card with a 30-day per-day availability strip
-- Open-issue summary broken down by severity
-- Score trend chart with 7/30/90-day ranges and a health/categories toggle
-- Recent audits and priority issues lists
-- Website selector that scopes every card on the page
-- **Run audit** button that simulates a real run: an audit appears as `running`,
-  resolves after a couple of seconds with new scores and lab metrics, appends a
-  trend point, and may open a new finding
+| Flow | Route | Notes |
+| --- | --- | --- |
+| Sign up | `/sign-up` | Creates the user; a trigger seeds their profile and preferences |
+| Confirm email | `/auth/callback` → `/` | Handles both PKCE `code` and `token_hash` links |
+| Sign in | `/sign-in` | Supports `?next=` to return to the page you were headed for |
+| Forgot password | `/forgot-password` | Always reports success, so it can't enumerate accounts |
+| Reset password | `/reset-password` | Recovery link signs you in, then you choose a new password |
+| Sign out | Account menu | Server action; returns you to `/sign-in` |
 
-### Websites (`/websites`)
+### How routes are protected
 
-- Table and card views of every monitored site
-- URL, health score, 30-day sparkline, uptime, open-issue count, last audit and
-  status
-- Search across name, URL, team and tags; filters for environment, status and
-  health band; five sort orders
-- **Add website** modal with live validation (required fields, domain format,
-  duplicate detection) and an option to run the first audit immediately
+Two independent layers:
 
-### Website detail (`/websites/[id]`)
+1. **`src/proxy.ts`** runs on every non-asset request. It refreshes the session
+   and redirects unauthenticated traffic to `/sign-in`, preserving the intended
+   destination.
+2. **`src/app/(app)/layout.tsx`** re-checks the user before rendering anything
+   private. This is not redundant — a misconfigured matcher or a rewrite can
+   skip middleware, and the layout that actually renders your data should not
+   take that on trust.
 
-- Identity header with status, team, environment, tags and monitoring start date
-- Overview metrics: health, uptime, average response time, open issues, last audit
-- Category score cards and a score-history chart
-- Daily availability chart
-- Tabbed findings for Performance, SEO, Accessibility and Best Practices — each
-  with the category score, open findings, passed checks, and (for performance)
-  the Core Web Vitals from the latest run
-- Recent audits and top issues for the site
-- Remove website, with a confirmation dialog
+Both use `supabase.auth.getUser()`, never `getSession()`. `getSession()` reads
+the JWT straight out of the cookie without verifying it, so a forged cookie
+would look like a valid session. `getUser()` revalidates with the auth server.
 
-### Audits (`/audits`)
+Redirect targets from `?next=` are checked to be same-origin absolute paths, so
+the parameter can't be used to bounce a freshly authenticated user off-site.
 
-- Full run history with status, website, start time, health score, per-category
-  scores, duration and findings count
-- Filters for website, status and device, plus free-text search
-- Summary tiles for runs in view, average health, average duration and failures
-- Paginated with a "load more" control
+---
 
-### Audit detail (`/audits/[id]`)
+## Data model
 
-- Health gauge compared against the previous run on the same site
-- Per-category scores with deltas
-- Duration, checks passed, new findings, device profile
-- Core Web Vitals grid (LCP, INP, CLS, FCP, TTFB, TBT, Speed Index) colour-coded
-  against the published thresholds
-- Findings opened by the run, and a sample of passed checks
-- Dedicated states for `running`, `queued` and `failed` runs
+Five tables, all owned by a user and all under RLS.
 
-### Issues (`/issues`)
+```
+auth.users
+  ├── profiles              (1:1)  full name, role, company, timezone
+  ├── report_preferences    (1:1)  report title, brand, notification toggles, audit defaults
+  └── websites              (1:N)  name, url, status, environment, team, tags
+        ├── audits          (1:N)  status, timing, four scores, health, Core Web Vitals
+        └── issues          (1:N)  severity, category, status, recommendation, affected pages
+```
 
-- Table of every finding: severity, title, rule ID, category, website, status
-  and date found
-- Filters for severity, category, website and status, plus search
-- Inline status control on every row
-- Detail drawer with description, recommended fix, affected pages, score impact,
-  effort, originating audit, and status controls
-- Status changes (Open / In Progress / Resolved / Ignored) persist locally
+Details worth knowing:
 
-### Reports (`/reports`)
+- **Ownership is enforced twice.** Every child table carries `owner_id` *and* a
+  composite foreign key — `audits(website_id, owner_id) → websites(id, owner_id)`.
+  So an audit can never point at a website belonging to someone else, even if
+  application code gets it wrong. `issues` does the same against both parents.
+- **Scores are nullable, with a check constraint.** A queued, running or failed
+  audit has no scores; a completed one must have all five. The constraint is
+  `(status = 'completed') = (scores are not null)`, so neither state can drift.
+- **A website's headline score isn't stored.** It's read from that site's most
+  recent completed audit, so the two can't disagree.
+- **`updated_at` is maintained by a trigger**, not by application code.
+- **Signing up creates the dependent rows.** `handle_new_user()` inserts the
+  profile and preferences, so the app never meets a user with neither.
 
-- Client-ready report document: executive summary, score summary table with
-  period-over-period change, trend chart, improvements and regressions,
-  per-website breakdown, and ranked priority issues with recommendations
-- Scope by website and period (7 / 30 / 90 days)
-- Export menu (PDF / CSV / share link) — currently reports "coming soon", since
-  generation lands with the reporting service in a later phase
+Enums (`website_status`, `audit_status`, `issue_severity`, …) generate exact
+TypeScript union types rather than bare strings — see `src/types/database.ts`.
 
-### Settings (`/settings`)
+### Derived, not stored
 
-- Profile: name, email, role, organisation, timezone — validated on save
-- Notification preferences: six toggles, saved immediately
-- Audit defaults: frequency, device profile, health alert threshold
-- Workspace data: explains local persistence and offers a reset to the seeded
-  dataset
+- **Trends** come from real audits, grouped by day. A new account has an empty
+  chart that fills in as audits accumulate — sparse and honest, rather than a
+  smooth line implying data that was never collected.
+- **Uptime** is derived deterministically from the website id. There is no
+  uptime prober in this phase, so there is no measured availability to store;
+  writing invented rows into the database would dress fiction up as fact. It's
+  stable per site, and `src/lib/derive/uptime.ts` is the single seam to replace
+  when real monitoring lands.
+
+---
+
+## Security model
+
+**Row Level Security is enabled and `FORCE`d on all five tables**, so even a
+table owner connecting directly is subject to it. Policies are written per
+operation (select / insert / update / delete) rather than as one `FOR ALL`
+policy, so a mistake in one can't silently widen the others.
+
+Every policy is the same shape:
+
+```sql
+using ((select auth.uid()) = owner_id)
+```
+
+`auth.uid()` is wrapped in a scalar subquery deliberately: Postgres then
+evaluates it once per statement as an InitPlan rather than once per row, which
+matters on `audits` and `issues`.
+
+The `anon` role is granted **nothing** on these tables — every one is private to
+a signed-in user.
+
+### Verified
+
+Run inside a rolled-back transaction against the live database, acting as a
+user id that owns nothing:
+
+| Check | Result |
+| --- | --- |
+| Read another user's websites / audits / issues / profiles / preferences | 0 rows |
+| Update another user's websites | 0 rows affected |
+| Delete another user's issues | 0 rows affected |
+| Insert a row owned by another user | blocked by `WITH CHECK` |
+| `anon` privileges on all five tables | none |
+| RLS enabled + forced on all five tables | yes |
+
+### Input validation
+
+Three layers, each doing a different job:
+
+1. **Client** — `src/lib/validation.ts` schemas run in the form for instant feedback.
+2. **Server** — the same schemas re-run inside every server action. Forms can be
+   bypassed; this is the layer that actually protects the database.
+3. **Database** — `CHECK` constraints on lengths, ranges and the URL format.
+
+The phase-1 localStorage import is validated especially strictly, since its
+payload is attacker-controlled by definition.
 
 ---
 
@@ -126,138 +214,107 @@ Then open <http://localhost:3000>.
 ```
 src/
 ├── app/
-│   ├── layout.tsx              # Root layout, metadata, providers, app shell
-│   ├── providers.tsx           # Store + toast + tooltip providers
-│   ├── globals.css             # Design tokens, base layer, animations
-│   ├── page.tsx                # Dashboard
-│   ├── error.tsx               # Route error boundary
-│   ├── not-found.tsx           # 404
-│   ├── loading.tsx             # Per-route loading skeletons (one per segment)
-│   ├── websites/[id]/
-│   ├── audits/[id]/
-│   ├── issues/
-│   ├── reports/
-│   └── settings/
-├── components/
-│   ├── ui/                     # Primitives: button, card, badge, input, select,
-│   │                           # dialog, sheet, dropdown, switch, tabs, table,
-│   │                           # tooltip, progress, skeleton, toast
-│   ├── layout/                 # Sidebar, mobile nav + tab bar, top bar,
-│   │                           # global search, notifications, user menu
-│   ├── shared/                 # Cross-feature: page header, empty state, badges,
-│   │                           # score ring, delta, stat tile, filters, avatar
-│   ├── charts/                 # Recharts wrappers + shared chart theme
-│   ├── dashboard/              # Overview cards, score cards, trend card, panels,
-│   │                           # website selector, run-audit button
-│   ├── websites/               # Table/cards, add-website dialog, category findings
-│   ├── audits/                 # Audit table, audit list row, vitals grid
-│   ├── issues/                 # Issue table, list row, detail drawer
-│   └── reports/                # Report document
+│   ├── layout.tsx              # Document shell + toast/tooltip providers
+│   ├── (auth)/                 # Sign in, sign up, forgot/reset password, check email
+│   ├── (app)/                  # Everything private; layout gates on the user
+│   │   ├── layout.tsx          # Auth check + workspace load + AppShell
+│   │   ├── page.tsx            # Dashboard
+│   │   ├── websites/[id]/ audits/[id]/ issues/ reports/ settings/
+│   ├── auth/callback/route.ts  # Email link handler (PKCE code + token_hash)
+│   └── actions/                # Server actions: auth, websites, audits, issues,
+│                               # settings, dev seed, legacy import
+├── proxy.ts                    # Session refresh + route protection
+├── components/                 # ui/ layout/ shared/ charts/ dashboard/
+│                               # websites/ audits/ issues/ reports/ auth/ onboarding/
 ├── lib/
-│   ├── constants.ts            # Reference clock, storage key, score weights
-│   ├── format.ts               # SSR-safe date/number formatting
-│   ├── scores.ts               # Score maths, bands, labels, colours
-│   ├── navigation.ts           # Nav config and active-path helpers
-│   ├── utils.ts                # `cn` class merger
-│   ├── mock/
-│   │   ├── random.ts           # Seeded PRNG
-│   │   ├── catalog.ts          # 32 realistic audit findings + passed checks
-│   │   └── generate.ts         # Deterministic dataset builder
-│   └── store/
-│       ├── app-store.tsx       # React context, localStorage persistence
-│       ├── reducer.ts          # All state transitions
-│       └── selectors.ts        # Derived data (summaries, trends, breakdowns)
-└── types/
-    └── index.ts                # Domain model
+│   ├── supabase/               # browser client, server client, session middleware, env
+│   ├── data/                   # workspace query + row→domain mappers
+│   ├── derive/                 # trends from audits, simulated uptime
+│   ├── audit/simulate.ts       # Audit simulation (server-side)
+│   ├── store/                  # Client store over server data + server actions
+│   ├── mock/                   # Seeded generator, used only by the dev seed
+│   └── validation.ts           # Shared zod schemas
+├── types/
+│   ├── index.ts                # Domain types
+│   └── database.ts             # Generated from the Supabase schema
+└── supabase/migrations/        # Version-controlled SQL
 ```
 
----
+### How data flows
 
-## How the mock data works
+`(app)/layout.tsx` loads the whole workspace server-side and hands it to a
+client store. Every phase-1 component still reads `useAppStore()` exactly as
+before — the mapping layer converts snake_case rows into the camelCase domain
+objects the UI was built against, so no chart, table or card had to change.
 
-Two decisions shape the data layer, and both matter if you extend it:
-
-**Everything is deterministic.** The dataset is built by a seeded PRNG
-(`lib/mock/random.ts`) from a fixed reference clock (`REFERENCE_NOW` in
-`lib/constants.ts`). The server render and the first client render therefore
-produce byte-identical output — no hydration mismatches from `Math.random()` or
-`Date.now()`. Date formatting uses UTC getters rather than `toLocaleString` for
-the same reason.
-
-**State lives in one client store.** `AppStoreProvider` seeds from
-`createSeedState()`, then hydrates from `localStorage` in an effect and writes
-back on every change. Reducer actions cover adding and removing websites,
-starting and completing audits, changing issue status, and updating settings.
-
-The seeded dataset contains 8 websites across production and staging, ~100
-audits spanning 90 days (including failed, running and queued runs), ~78 findings
-drawn from a catalogue of realistic Lighthouse/axe-style rules, 90 days of daily
-score history per site, and 30 days of uptime.
-
-Clearing the workspace data (Settings → Reset demo data, or the account menu)
-restores the seed.
+Mutations go through server actions, which validate, write, and
+`revalidatePath`. Issue-status edits apply optimistically so the control doesn't
+snap back during the round-trip, and roll back if the server rejects them.
 
 ---
 
-## Design
+## Development data
 
-A single dark navy theme, executed properly rather than a half-finished
-light/dark pair. All tokens live in `@theme` at the top of `globals.css`:
+**New accounts start empty**, with onboarding empty states throughout.
 
-- **Surfaces** — `background` → `surface` → `card` → `elevated` → `hover`
-- **Interactive** — blue `primary`, sky `accent`
-- **Health status** — green (good, 90+), amber (needs work, 60–89), red (poor,
-  below 60), used identically by badges, gauges, progress bars and charts
+**Demo data (development only).** Account menu → *Load demo data*, or Settings →
+Workspace data. It writes eight sample websites with ~100 audits and ~78
+findings under your own `owner_id`. The server action refuses outright when
+`NODE_ENV === "production"` — the guard is on the server, not just hidden in the
+UI, because a server action is a public endpoint.
 
-Charts mirror the same values in `components/charts/chart-theme.ts`, because
-Recharts renders inline SVG rather than utility classes.
+**Phase-1 localStorage data.** If the browser still holds a `performancehub:state`
+payload from phase 1, a banner offers to import or discard it. It never imports
+automatically: that data belongs to whoever used the browser last, and silently
+attaching it to whichever account signs in next would be wrong. Nothing is
+deleted until you choose.
 
-Responsiveness: fixed sidebar from `lg`, a slide-in drawer below it, and a
-bottom tab bar on phones. Wide tables scroll inside their own container so the
-page body never scrolls sideways. Every list, table and chart has a purpose-written
-empty state, and each route segment has a skeleton that mirrors its real layout.
+---
+
+## Recommended project settings
+
+Two things worth enabling in the Supabase dashboard — both are configuration,
+not code:
+
+- **Leaked password protection** (Authentication → Policies). Checks new
+  passwords against HaveIBeenPwned. Currently off.
+- **Custom SMTP** (Project Settings → Auth). The built-in email service is
+  rate-limited to a couple of messages per hour, which is fine for development
+  but will block real sign-ups.
 
 ---
 
 ## Accessibility
 
-- Skip-to-content link, landmark regions, and `aria-current` on active nav items
+- Skip-to-content link, landmark regions, `aria-current` on active nav items
 - Visible `:focus-visible` ring that is never removed
-- Labelled form fields with inline, `role="alert"` errors
+- Labelled fields with inline, `role="alert"` errors
 - Accessible names on every icon-only control
-- Charts have text equivalents nearby; gauges expose an `aria-label` with the
-  score and its rating
+- Password fields have a labelled show/hide toggle and correct `autocomplete`
+  values, so managers offer the right credential
 
 ---
 
 ## Future integration plan
 
-Phase 1 deliberately keeps every I/O boundary in one place, so later phases
-replace the data layer without touching the UI.
-
-**Phase 2 — real audits.** Swap `lib/mock/generate.ts` for a PageSpeed
+**Phase 3 — real audits.** Replace `src/lib/audit/simulate.ts` with a PageSpeed
 Insights / Lighthouse CI client. `Audit`, `Scores` and `WebVitals` already match
-the shape those APIs return. Run audits in a queue-backed job rather than a
-`setTimeout`, and have the client poll or subscribe for completion.
+those payloads. Move execution to a queue-backed job and resolve runs from a
+webhook rather than a client-side timer.
 
-**Phase 3 — persistence and accounts.** Move `PersistedState` into Postgres
-(websites, audits, issues, trend points, uptime days map cleanly to tables).
-Replace the reducer's local dispatches with server actions, add authentication,
-and scope every query to an organisation. The user menu and settings page are
-already laid out for real accounts.
+**Phase 4 — monitoring and delivery.** A real uptime prober replacing
+`lib/derive/uptime.ts` with an `uptime_checks` table; scheduled audits driven by
+the stored `audit_frequency`; the notification service behind the existing
+preference toggles; PDF and CSV report export.
 
-**Phase 4 — monitoring and delivery.** Add a real uptime prober feeding
-`UptimeDay`, scheduled audits driven by the `auditFrequency` setting, and the
-notification service behind the existing preference toggles (email, Slack,
-webhooks). Wire the report export menu to a PDF renderer and a CSV endpoint.
+**Phase 5 — collaboration.** Teams and shared workspaces, which is where the
+single-owner RLS model becomes membership-based. Public report links. Billing.
 
-**Phase 5 — depth.** Historical page-level breakdowns, competitor benchmarking,
-CI integration that fails builds on score regressions, and shareable public
-report links.
+None of these are in this phase.
 
 ---
 
 ## Stack
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Radix UI
-primitives · Recharts · Lucide icons
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Supabase
+(Auth + Postgres) · Radix UI primitives · Recharts · Lucide icons · Zod

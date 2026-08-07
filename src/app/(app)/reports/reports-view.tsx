@@ -28,7 +28,6 @@ import {
   portfolioSummary,
   websiteIssueCount,
 } from "@/lib/store/selectors";
-import { REFERENCE_NOW } from "@/lib/constants";
 import { isActive, sortBySeverity } from "@/lib/scores";
 import type { Scores } from "@/types";
 
@@ -38,7 +37,7 @@ const PERIODS = [
   { value: "90", label: "90 days" },
 ];
 
-export default function ReportsPage() {
+export function ReportsView({ generatedAt }: { generatedAt: string }) {
   const { state } = useAppStore();
   const { toast } = useToast();
 
@@ -46,6 +45,7 @@ export default function ReportsPage() {
   const [period, setPeriod] = React.useState("30");
 
   const periodDays = Number(period);
+  const now = new Date(generatedAt).getTime();
 
   const scopedWebsites = React.useMemo(
     () =>
@@ -77,7 +77,7 @@ export default function ReportsPage() {
         }
       : summary.scores;
 
-    const cutoff = REFERENCE_NOW.getTime() - periodDays * 86_400_000;
+    const cutoff = now - periodDays * 86_400_000;
     const scopedIssues = state.issues.filter((i) => scopedIds.includes(i.websiteId));
 
     const openIssues = scopedIssues
@@ -88,7 +88,7 @@ export default function ReportsPage() {
     return {
       title:
         scope === ALL_WEBSITES
-          ? "Portfolio performance report"
+          ? state.settings.reportTitle
           : `${scopedWebsites[0].name} performance report`,
       scopeLabel:
         scope === ALL_WEBSITES
@@ -96,8 +96,8 @@ export default function ReportsPage() {
           : scopedWebsites[0].team,
       periodDays,
       periodStart: trend[0]?.date ?? new Date(cutoff).toISOString(),
-      periodEnd: trend[trend.length - 1]?.date ?? REFERENCE_NOW.toISOString(),
-      generatedAt: REFERENCE_NOW.toISOString(),
+      periodEnd: trend[trend.length - 1]?.date ?? new Date(now).toISOString(),
+      generatedAt: new Date(now).toISOString(),
       scores: summary.scores,
       previousScores,
       health: summary.health,
@@ -121,10 +121,11 @@ export default function ReportsPage() {
         (i) => new Date(i.foundAt).getTime() >= cutoff,
       ).length,
       openIssues,
-      preparedBy: state.settings.profile.name,
-      company: state.settings.profile.company,
+      preparedBy: state.settings.profile.name || state.settings.profile.email,
+      company:
+        state.settings.brandName || state.settings.profile.company || "—",
     };
-  }, [state, scope, scopedIds, scopedWebsites, periodDays]);
+  }, [state, scope, scopedIds, scopedWebsites, periodDays, now]);
 
   function comingSoon(format: string) {
     toast({
