@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { siteUrl } from "@/lib/supabase/env";
+import { safeNextPath } from "@/lib/security/safe-redirect";
 import {
   fieldErrors,
   forgotPasswordSchema,
@@ -13,16 +14,6 @@ import {
 } from "@/lib/validation";
 import type { ActionResult } from "./types";
 
-/**
- * Only same-origin, absolute-path redirects are honoured. Without this an
- * attacker could craft `/sign-in?next=https://evil.example` and bounce a freshly
- * authenticated user off-site.
- */
-function safeNext(next: string | undefined | null): string {
-  if (!next) return "/";
-  if (!next.startsWith("/") || next.startsWith("//")) return "/";
-  return next;
-}
 
 export async function signIn(
   _prev: ActionResult | null,
@@ -47,7 +38,7 @@ export async function signIn(
   }
 
   revalidatePath("/", "layout");
-  redirect(safeNext(formData.get("next") as string | null));
+  redirect(safeNextPath(formData.get("next") as string | null));
 }
 
 export async function signUp(

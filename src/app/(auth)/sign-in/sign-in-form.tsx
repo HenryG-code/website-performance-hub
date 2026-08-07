@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { signIn } from "@/app/actions/auth";
+import { safeNextPath } from "@/lib/security/safe-redirect";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import {
@@ -27,7 +28,9 @@ export function SignInForm() {
     null,
   );
 
-  const next = searchParams.get("next") ?? "";
+  // Sanitised here as well as in the action, so an attacker-supplied URL never
+  // reaches the DOM at all.
+  const next = safeNextPath(searchParams.get("next"));
   const notice = NOTICES[searchParams.get("error") ?? ""];
   const justRegistered = searchParams.get("registered") === "1";
 
