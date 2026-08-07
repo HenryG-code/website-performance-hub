@@ -7,7 +7,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Delta } from "@/components/shared/delta";
 import { IssueListRow } from "@/components/issues/issue-list";
 import { VitalsGrid } from "@/components/audits/vitals-grid";
-import { PASSED_CHECKS } from "@/lib/mock/catalog";
 import { BAND_HEX, CATEGORY_LABELS, scoreBand, sortBySeverity } from "@/lib/scores";
 import type { Audit, Issue, IssueCategory } from "@/types";
 import { cn } from "@/lib/utils";
@@ -128,25 +127,19 @@ export function CategoryFindings({
         )}
       </Card>
 
-      <Card>
-        <CardToolbar
-          title="Passed checks"
-          description="Verified as healthy in the latest run"
-        />
-        <CardContent>
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {PASSED_CHECKS[category].map((check) => (
-              <li
-                key={check}
-                className="flex items-start gap-2 text-xs text-muted-foreground"
-              >
-                <CheckCircle2 className="mt-px size-3.5 shrink-0 text-success" />
-                {check}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      {latestAudit ? (
+        <Card>
+          <CardContent className="flex items-center gap-3">
+            <CheckCircle2 className="size-4 shrink-0 text-success" />
+            <p className="text-xs text-muted-foreground">
+              {latestAudit.passedChecks} of {latestAudit.totalChecks} Lighthouse
+              checks passed in the latest run. Open the{" "}
+              <span className="text-foreground">audit detail</span> to see exactly
+              which ones.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

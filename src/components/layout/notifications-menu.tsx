@@ -70,20 +70,22 @@ export function NotificationsMenu() {
         tone: "text-success",
       }));
 
-    const degraded: Notification[] = state.websites
-      .filter((w) => w.status === "degraded" || w.status === "down")
-      .slice(0, 2)
+    // A failed run is the thing most worth interrupting someone about: the
+    // dashboard is still showing older scores until it is re-run.
+    const failures: Notification[] = state.websites
+      .filter((w) => w.lastFailure !== null)
+      .slice(0, 3)
       .map((website) => ({
-        id: `uptime-${website.id}`,
-        title: `${website.name} is ${website.status}`,
-        detail: `${website.uptime30d}% uptime over 30 days`,
-        at: website.lastAuditAt || state.settings.profile.timezone,
+        id: `failure-${website.id}`,
+        title: `Audit failed for ${website.name}`,
+        detail: website.lastFailure!.reason,
+        at: website.lastFailure!.at,
         href: `/websites/${website.id}`,
         icon: TriangleAlert,
         tone: "text-warning",
       }));
 
-    return [...criticals, ...degraded, ...audits]
+    return [...criticals, ...failures, ...audits]
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       .slice(0, 7);
   }, [state]);

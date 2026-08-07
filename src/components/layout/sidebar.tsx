@@ -6,7 +6,6 @@ import { Logo } from "./logo";
 import { NavLinks } from "./nav-links";
 import { useAppStore } from "@/lib/store/app-store";
 import { portfolioSummary } from "@/lib/store/selectors";
-import { formatPercent } from "@/lib/format";
 
 /** Fixed desktop sidebar. Hidden below `lg`, where the drawer takes over. */
 export function Sidebar() {
@@ -30,15 +29,17 @@ export function Sidebar() {
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-3.5 text-success" />
             <span className="text-xs font-medium text-foreground">
-              Portfolio uptime
+              Portfolio health
             </span>
           </div>
-          <p className="mt-1.5 font-mono text-lg font-semibold text-success tabular-nums">
-            {formatPercent(summary.uptime, 2)}
+          <p className="mt-1.5 font-mono text-lg font-semibold text-foreground tabular-nums">
+            {summary.monitoredCount > 0 ? summary.health : "—"}
           </p>
           <p className="mt-0.5 text-[11px] text-subtle-foreground">
-            {summary.monitoredCount} of {summary.websiteCount} sites monitored ·
-            30 days
+            {summary.monitoredCount} of {summary.websiteCount} sites audited
+            {summary.failedCount > 0
+              ? ` · ${summary.failedCount} failed`
+              : ""}
           </p>
         </div>
 

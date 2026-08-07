@@ -14,9 +14,9 @@ import {
 import { RunAuditButton } from "@/components/dashboard/run-audit-button";
 import { ScoreCards } from "@/components/dashboard/score-cards";
 import {
+  FieldDataCard,
   HealthCard,
   IssuesSummaryCard,
-  UptimeCard,
 } from "@/components/dashboard/overview-cards";
 import { TrendCard } from "@/components/dashboard/trend-card";
 import {
@@ -33,7 +33,7 @@ import {
   recentAudits,
 } from "@/lib/store/selectors";
 import { isActive } from "@/lib/scores";
-import type { Issue, UptimeDay } from "@/types";
+import type { Issue } from "@/types";
 
 export default function DashboardPage() {
   const { state } = useAppStore();
@@ -69,28 +69,10 @@ export default function DashboardPage() {
     [summary.scores, trend, scopedIssues],
   );
 
-  // Averaging daily uptime across the scope keeps the strip meaningful when
-  // several sites are selected at once.
-  const uptimeDays = React.useMemo<UptimeDay[]>(() => {
-    const buckets = new Map<string, { uptime: number; incidents: number; n: number }>();
-    for (const id of scopedIds) {
-      for (const day of state.uptime[id] ?? []) {
-        const bucket = buckets.get(day.date) ?? { uptime: 0, incidents: 0, n: 0 };
-        bucket.uptime += day.uptime;
-        bucket.incidents += day.incidents;
-        bucket.n += 1;
-        buckets.set(day.date, bucket);
-      }
-    }
-    return [...buckets.entries()]
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([date, b]) => ({
-        date,
-        uptime: Math.round((b.uptime / b.n) * 100) / 100,
-        avgResponseMs: 0,
-        incidents: b.incidents,
-      }));
-  }, [scopedIds, state.uptime]);
+  const scopedWebsites = React.useMemo(
+    () => state.websites.filter((w) => scopedIds.includes(w.id)),
+    [state.websites, scopedIds],
+  );
 
   const audits = React.useMemo(
     () => recentAudits(state, 6, scopedIds),
@@ -155,8 +137,11 @@ export default function DashboardPage() {
         aria-label="Portfolio summary"
       >
         <HealthCard summary={summary} scopeLabel={scopeLabel} />
-        <UptimeCard summary={summary} uptimeDays={uptimeDays} />
-        <IssuesSummaryCard issues={scopedIssues.filter(isActive)} />
+        <FieldDataCard websites={scopedWebsites} summary={summary} />
+        <IssuesSummaryCard
+          issues={scopedIssues.filter(isActive)}
+          failedCount={summary.failedCount}
+        />
       </section>
 
       <section aria-label="Category scores">

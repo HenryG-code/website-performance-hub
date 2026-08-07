@@ -102,7 +102,8 @@ export function ReportsView({ generatedAt }: { generatedAt: string }) {
       previousScores,
       health: summary.health,
       previousHealth: first?.health ?? summary.health,
-      uptime: summary.uptime,
+      medianTtfbMs: summary.medianTtfbMs,
+      fieldDataCount: summary.fieldDataCount,
       trend,
       websites: scopedWebsites,
       websiteIssueCounts: Object.fromEntries(

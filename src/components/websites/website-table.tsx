@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScoreBadge, WebsiteStatusBadge } from "@/components/shared/badges";
 import { SiteAvatar } from "@/components/shared/site-avatar";
 import { Sparkline } from "@/components/charts/sparkline";
-import { displayUrl, formatPercent, formatRelative } from "@/lib/format";
+import { displayUrl, formatMs, formatRelative } from "@/lib/format";
 import type { TrendPoint, Website } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -33,9 +33,9 @@ export function WebsiteTable({ rows }: { rows: WebsiteRow[] }) {
           <TableRow>
             <TableHead>Website</TableHead>
             <TableHead className="w-32">Health</TableHead>
-            <TableHead className="w-28">30-day trend</TableHead>
-            <TableHead className="w-28">Uptime</TableHead>
-            <TableHead className="w-24">Issues</TableHead>
+            <TableHead className="w-28">Score trend</TableHead>
+            <TableHead className="w-28">Server response</TableHead>
+            <TableHead className="w-24">Findings</TableHead>
             <TableHead className="w-32">Last audit</TableHead>
             <TableHead className="w-36">Status</TableHead>
             <TableHead className="w-10" aria-label="Open" />
@@ -86,18 +86,22 @@ export function WebsiteTable({ rows }: { rows: WebsiteRow[] }) {
               </TableCell>
 
               <TableCell>
-                <span
-                  className={cn(
-                    "font-mono text-sm tabular-nums",
-                    website.uptime30d >= 99.9
-                      ? "text-success"
-                      : website.uptime30d >= 99
-                        ? "text-warning"
-                        : "text-danger",
-                  )}
-                >
-                  {formatPercent(website.uptime30d, 2)}
-                </span>
+                {website.ttfbMs === null ? (
+                  <span className="text-xs text-subtle-foreground">Not measured</span>
+                ) : (
+                  <span
+                    className={cn(
+                      "font-mono text-sm tabular-nums",
+                      website.ttfbMs <= 800
+                        ? "text-success"
+                        : website.ttfbMs <= 1800
+                          ? "text-warning"
+                          : "text-danger",
+                    )}
+                  >
+                    {formatMs(website.ttfbMs)}
+                  </span>
+                )}
               </TableCell>
 
               <TableCell>
@@ -183,13 +187,13 @@ export function WebsiteCards({ rows }: { rows: WebsiteRow[] }) {
 
           <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-xs">
             <div>
-              <dt className="text-subtle-foreground">Uptime</dt>
+              <dt className="text-subtle-foreground">Response</dt>
               <dd className="mt-0.5 font-mono text-foreground tabular-nums">
-                {formatPercent(website.uptime30d, 2)}
+                {formatMs(website.ttfbMs)}
               </dd>
             </div>
             <div>
-              <dt className="text-subtle-foreground">Issues</dt>
+              <dt className="text-subtle-foreground">Findings</dt>
               <dd className="mt-0.5 font-mono text-foreground tabular-nums">
                 {issueCount}
               </dd>
