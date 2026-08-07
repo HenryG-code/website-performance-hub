@@ -117,13 +117,20 @@ export function RunAuditButton({
         onClick={() => void run(strategy)}
         disabled={disabled}
         aria-live="polite"
+        // Sets the expectation before the click, not just after it: a real
+        // Lighthouse run is genuinely slow and the request stays open for it.
+        title={
+          running
+            ? "Google is analysing the page. This can take up to a minute."
+            : `Runs a live Google PageSpeed audit (${strategy}). Takes 10-60 seconds.`
+        }
         className="rounded-r-none"
       >
         {running ? <Loader2 className="animate-spin" /> : <Play />}
         {running
           ? progress
             ? `Auditing ${progress}…`
-            : "Running audit…"
+            : "Running… up to 60s"
           : resolvedLabel}
       </Button>
 
