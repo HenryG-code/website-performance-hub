@@ -84,6 +84,22 @@ export function formatPercent(value: number, digits = 1): string {
   return `${value.toFixed(digits)}%`;
 }
 
+/**
+ * Millisecond durations, switching to seconds once they get long enough that
+ * four digits stop being readable.
+ */
+export function formatMs(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
+  return `${Math.round(value)}ms`;
+}
+
+/** Seconds, as Lighthouse reports paint timings. */
+export function formatSeconds(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `${value.toFixed(1)}s`;
+}
+
 export function formatNumber(value: number): string {
   // Manual grouping keeps output locale-independent for SSR safety.
   const [whole, fraction] = String(value).split(".");
