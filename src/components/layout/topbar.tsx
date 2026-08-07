@@ -24,7 +24,7 @@ export function Topbar() {
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-foreground">{title}</h2>
           <p className="hidden truncate text-xs text-subtle-foreground sm:block">
-            Phase 1 · local mock data
+            Private workspace · live audit data
           </p>
         </div>
 
