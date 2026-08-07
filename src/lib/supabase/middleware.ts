@@ -9,12 +9,53 @@ const PUBLIC_PREFIXES = [
   "/forgot-password",
   "/reset-password",
   "/check-email",
-  "/auth/", // callback + confirm + sign-out route handlers
+  "/auth", // callback + confirm + sign-out route handlers
 ];
 
-function isPublic(pathname: string): boolean {
+/**
+ * Metadata routes Next generates from `app/`.
+ *
+ * These are fetched by clients that can never have a session — link unfurlers
+ * reading the Open Graph card, iOS grabbing the touch icon, the browser
+ * loading the web manifest. Gating them behind auth makes every shared link
+ * render without a preview and the installed app show a blank icon.
+ *
+ * They expose nothing private: all three are generated from static brand
+ * assets, not from any user's data.
+ */
+const PUBLIC_METADATA_ROUTES = new Set([
+  "/manifest.webmanifest",
+  "/opengraph-image",
+  "/twitter-image",
+  "/apple-icon",
+  "/icon",
+  "/robots.txt",
+  "/sitemap.xml",
+]);
+
+/**
+ * Whether a path may be served without a session.
+ *
+ * Exported so the classification is covered by tests: getting it wrong in
+ * either direction is serious — too narrow and shared links lose their preview,
+ * too wide and a private route leaks.
+ */
+export function isPublic(pathname: string): boolean {
+  if (PUBLIC_METADATA_ROUTES.has(pathname)) return true;
+
+  // Generated icon routes can carry a cache-busting suffix, e.g. `/icon/route`
+  // or `/apple-icon/opengraph-image-abc123`.
+  if (/^\/(icon|apple-icon|opengraph-image|twitter-image)([/-]|$)/.test(pathname)) {
+    return true;
+  }
+
+  /*
+    Matched on whole path segments. A bare `startsWith` would make any future
+    route whose name merely begins with a public one — `/sign-in-report`, say —
+    silently reachable without a session.
+  */
   return PUBLIC_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(prefix),
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
 
