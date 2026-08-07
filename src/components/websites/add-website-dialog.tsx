@@ -181,8 +181,8 @@ export function AddWebsiteDialog({ trigger }: { trigger?: React.ReactNode }) {
           <DialogHeader>
             <DialogTitle>Add a website</DialogTitle>
             <DialogDescription>
-              PerformanceHub will track its scores, uptime and open findings
-              alongside the rest of your portfolio.
+              PerformanceHub will track its Lighthouse scores, Core Web Vitals
+              and open findings alongside the rest of your portfolio.
             </DialogDescription>
           </DialogHeader>
 

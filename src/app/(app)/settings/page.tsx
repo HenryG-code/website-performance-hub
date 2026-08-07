@@ -58,9 +58,10 @@ const NOTIFICATION_COPY: Record<
     label: "Critical issues",
     description: "As soon as a critical severity finding is opened.",
   },
-  uptimeIncidents: {
-    label: "Uptime incidents",
-    description: "When a monitored site starts failing health checks.",
+  auditFailed: {
+    label: "Audit failures",
+    description:
+      "When a run cannot complete, so you know the scores on screen are stale.",
   },
   scoreDrops: {
     label: "Score drops",

@@ -131,7 +131,7 @@ export default function WebsitesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Websites"
-        description="Every property under monitoring, with its current health score, availability and outstanding findings."
+        description="Every property you monitor, with its current health score, measured server response and outstanding findings."
         actions={
           <>
             <Tabs value={view} onValueChange={(value) => setView(value as typeof view)}>
@@ -205,7 +205,7 @@ export default function WebsitesPage() {
           <EmptyState
             icon={Globe}
             title="No websites yet"
-            description="Add the first site you want to monitor. PerformanceHub will start tracking its scores, uptime and issues straight away."
+            description="Add the first site you want to monitor, then run an audit to collect its Lighthouse scores, Core Web Vitals and findings."
             action={<AddWebsiteDialog />}
           />
         </Card>

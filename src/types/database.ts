@@ -295,7 +295,7 @@ export type Database = {
           notify_critical_issues: boolean;
           notify_product_updates: boolean;
           notify_score_drops: boolean;
-          notify_uptime_incidents: boolean;
+          notify_audit_failed: boolean;
           notify_weekly_digest: boolean;
           owner_id: string;
           report_title: string;
@@ -311,7 +311,7 @@ export type Database = {
           notify_critical_issues?: boolean;
           notify_product_updates?: boolean;
           notify_score_drops?: boolean;
-          notify_uptime_incidents?: boolean;
+          notify_audit_failed?: boolean;
           notify_weekly_digest?: boolean;
           owner_id: string;
           report_title?: string;
@@ -327,7 +327,7 @@ export type Database = {
           notify_critical_issues?: boolean;
           notify_product_updates?: boolean;
           notify_score_drops?: boolean;
-          notify_uptime_incidents?: boolean;
+          notify_audit_failed?: boolean;
           notify_weekly_digest?: boolean;
           owner_id?: string;
           report_title?: string;

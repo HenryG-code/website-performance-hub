@@ -94,13 +94,13 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <PageHeader
           title="Dashboard"
-          description="Track performance, SEO, accessibility and uptime across every website you manage."
+          description="Track performance, SEO, accessibility and best practices across every website you manage."
         />
         <Card>
           <EmptyState
             icon={Globe}
             title="No websites yet"
-            description="Add your first website to start collecting audit scores, uptime data and issue history."
+            description="Add your first website, then run an audit to start building its score history and findings."
             action={
               <Button asChild>
                 <Link href="/websites">
