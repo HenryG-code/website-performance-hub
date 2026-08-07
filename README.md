@@ -1,16 +1,32 @@
 # PerformanceHub
 
-A website-health dashboard for owners and agencies. PerformanceHub brings
-performance, SEO, accessibility, best-practice, uptime and issue-tracking data
-for every site you manage into one place.
+[![PerformanceHub product preview](docs/images/performancehub-preview.png)](https://performancehub.weblytics.co.za)
 
-**Every score, metric, finding and audit date in this app comes from a real
-Google PageSpeed Insights response, stored verbatim.** Nothing is simulated, and
-nothing is estimated to fill a gap — where Google reports no data, the UI says
-so rather than showing a plausible number.
+> A private website-health workspace for owners and agencies.
 
-Users sign up, sign in, and see only their own websites, audits, issues and
-settings, enforced by Postgres Row Level Security.
+PerformanceHub turns live Google PageSpeed Insights responses into an
+actionable view of website performance, SEO, accessibility, best practices and
+open findings - without inventing numbers to fill gaps.
+
+[Open the live app](https://performancehub.weblytics.co.za) ·
+[View the source](https://github.com/HenryG-code/website-performance-hub)
+
+## Highlights
+
+- **Live audit evidence** - every score, metric, finding and audit date comes
+  from a stored Google PageSpeed Insights response.
+- **Clear lab-versus-field reporting** - Lighthouse and Chrome UX Report data
+  are presented separately, and the UI says when field data is unavailable.
+- **Private by design** - Supabase Auth and Postgres Row Level Security keep
+  every workspace isolated to its signed-in owner.
+- **Practical audit workflow** - monitor websites, run desktop or mobile
+  audits, prioritise findings and generate client-ready reports.
+- **Production safeguards** - SSRF protection, rate limits, duplicate-run
+  prevention, stale-result handling and typed database constraints.
+
+There is intentionally **no synthetic uptime, availability or sample audit
+data** presented as a real measurement. If Google does not provide a metric,
+PerformanceHub makes that limitation visible.
 
 ---
 
@@ -102,6 +118,7 @@ Open <http://localhost:3000>, create an account, and add your first website.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Vitest, once |
 | `npm run test:watch` | Vitest in watch mode |
+| `npm run test:live` | Live PageSpeed and DNS verification (uses local API key) |
 
 ---
 
@@ -403,7 +420,7 @@ reaches a running application.
 npm test
 ```
 
-160 tests across eight suites, none of which touch the network:
+188 tests across nine suites, none of which touch the network:
 
 | Suite | Covers |
 | --- | --- |
@@ -453,11 +470,10 @@ not code:
 
 ## Screenshots
 
-Not committed. Every screen worth showing — the dashboard, a website's score
-history, an audit's lab-versus-field panel — renders one account's private
-audit data, and the three reference sites (weblytics.co.za, sinoplant.co.za,
-bwts.co.za) belong to real clients. Committing those images would publish
-client performance data to a public repository.
+The data-free product preview at the top of this README is committed. Signed-in
+dashboard screenshots are not: they contain one account's private audit data,
+and the reference sites may belong to real clients. Publishing those images in
+a public repository would expose client performance information.
 
 To generate a set locally:
 
