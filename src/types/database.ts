@@ -172,6 +172,7 @@ export type Database = {
           category: Database["public"]["Enums"]["issue_category"];
           created_at: string;
           description: string;
+          device: Database["public"]["Enums"]["device_type"] | null;
           display_value: string | null;
           effort: Database["public"]["Enums"]["effort_level"];
           found_at: string;
@@ -195,6 +196,7 @@ export type Database = {
           category: Database["public"]["Enums"]["issue_category"];
           created_at?: string;
           description?: string;
+          device?: Database["public"]["Enums"]["device_type"] | null;
           display_value?: string | null;
           effort?: Database["public"]["Enums"]["effort_level"];
           found_at?: string;
@@ -218,6 +220,7 @@ export type Database = {
           category?: Database["public"]["Enums"]["issue_category"];
           created_at?: string;
           description?: string;
+          device?: Database["public"]["Enums"]["device_type"] | null;
           display_value?: string | null;
           effort?: Database["public"]["Enums"]["effort_level"];
           found_at?: string;

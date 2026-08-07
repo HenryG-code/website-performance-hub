@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { PageSpeedError, hasApiKey, runPageSpeed } from "@/lib/pagespeed/client";
-import { mapPageSpeedResponse } from "@/lib/pagespeed/map";
+import { mapPageSpeedResponse, type MappedFinding } from "@/lib/pagespeed/map";
 import type { PsiStrategy } from "@/lib/pagespeed/types";
 import { assertPublicUrl } from "@/lib/security/url-guard";
 import {
@@ -11,6 +11,7 @@ import {
   STALE_RUNNING_MS,
   evaluateThrottle,
 } from "@/lib/audit/limits";
+import { planFindingReconciliation } from "@/lib/audit/reconcile";
 import { healthScore } from "@/lib/scores";
 import type { Json, TablesInsert } from "@/types/database";
 import type { ActionResult } from "./types";
@@ -19,6 +20,138 @@ const STRATEGIES: PsiStrategy[] = ["mobile", "desktop"];
 
 function isStrategy(value: unknown): value is PsiStrategy {
   return typeof value === "string" && STRATEGIES.includes(value as PsiStrategy);
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Marks runs abandoned by a crashed request as failed.
+ *
+ * Scoped by RLS to the caller's own audits, so one user can never resolve
+ * another's rows.
+ */
+async function releaseStaleRuns(
+  supabase: SupabaseServerClient,
+  cutoffIso: string,
+): Promise<void> {
+  await supabase
+    .from("audits")
+    .update({
+      status: "failed",
+      failure_reason: "The audit did not finish. Run it again.",
+      error_code: "abandoned",
+    })
+    .eq("status", "running")
+    .lt("started_at", cutoffIso);
+}
+
+/**
+ * Brings stored findings in line with what this run reported.
+ *
+ * Deliberately not a delete-and-reinsert. That destroyed two things people
+ * care about: the status a user had set on a finding (In Progress, Ignored),
+ * and the findings attached to previous audits, which left their detail pages
+ * claiming nothing was found.
+ *
+ * Instead, per website and strategy:
+ *   - a rule the run still reports is refreshed in place, keeping its status
+ *   - a rule the run no longer reports is marked resolved, because Lighthouse
+ *     reports the complete state of a page every time, so its absence means it
+ *     genuinely passes now
+ *   - a rule seen for the first time is inserted as open
+ *
+ * Scoped by strategy so a desktop run cannot resolve a mobile-only finding.
+ */
+async function reconcileFindings({
+  supabase,
+  websiteId,
+  ownerId,
+  auditId,
+  strategy,
+  findings,
+  at,
+}: {
+  supabase: SupabaseServerClient;
+  websiteId: string;
+  ownerId: string;
+  auditId: string;
+  strategy: PsiStrategy;
+  findings: MappedFinding[];
+  at: string;
+}): Promise<Error | null> {
+  const { data: existing, error: readError } = await supabase
+    .from("issues")
+    .select("id, rule_id, status")
+    .eq("website_id", websiteId)
+    .eq("provider", "pagespeed")
+    .eq("device", strategy);
+
+  if (readError) return new Error(readError.message);
+
+  const plan = planFindingReconciliation(
+    (existing ?? []).map((row) => ({
+      id: row.id,
+      ruleId: row.rule_id,
+      status: row.status,
+    })),
+    findings,
+  );
+
+  const shared = (finding: MappedFinding) => ({
+    audit_id: auditId,
+    title: finding.title.slice(0, 200),
+    description: finding.description.slice(0, 2000),
+    // Lighthouse folds its fix guidance into the description, so there is no
+    // separate recommendation to store. Leaving it empty is honest;
+    // paraphrasing would invent advice Google did not give.
+    recommendation: "",
+    severity: finding.severity,
+    category: finding.category,
+    kind: finding.kind,
+    display_value: finding.displayValue?.slice(0, 200) ?? null,
+    savings_ms: finding.savingsMs,
+    score_impact: Math.min(100, Math.max(0, finding.scoreImpact)),
+    affected_pages: finding.affectedResources.slice(0, 25),
+  });
+
+  // ---- still failing: refresh the measurements, keep the user's triage ----
+  for (const { id, finding, status } of plan.update) {
+    const { error } = await supabase
+      .from("issues")
+      .update({ ...shared(finding), status })
+      .eq("id", id);
+
+    if (error) return new Error(error.message);
+  }
+
+  // ---- newly reported ----------------------------------------------------
+  if (plan.insert.length > 0) {
+    const newRows: TablesInsert<"issues">[] = plan.insert.map((finding) => ({
+      website_id: websiteId,
+      owner_id: ownerId,
+      provider: "pagespeed" as const,
+      device: strategy,
+      rule_id: finding.ruleId,
+      status: "open" as const,
+      found_at: at,
+      ...shared(finding),
+    }));
+
+    const { error } = await supabase.from("issues").insert(newRows);
+    if (error) return new Error(error.message);
+  }
+
+  // ---- no longer reported: it passes now ---------------------------------
+  if (plan.resolve.length > 0) {
+    const { error } = await supabase
+      .from("issues")
+      .update({ status: "resolved" })
+      .in("id", plan.resolve);
+
+    if (error) return new Error(error.message);
+  }
+
+  return null;
 }
 
 /**
@@ -90,6 +223,12 @@ export async function runAudit(
   const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
   const cooldownAgo = new Date(now.getTime() - AUDIT_COOLDOWN_MS).toISOString();
 
+  // Reclaim runs abandoned by a crashed or redeployed process before doing
+  // anything else. Without this they would sit in `running` forever, show a
+  // permanent spinner, and — now that one live run per target is enforced by a
+  // unique index — block every future run of the same site and strategy.
+  await releaseStaleRuns(supabase, staleCutoff);
+
   const [runningResult, recentResult, hourResult, dayResult] = await Promise.all([
     supabase
       .from("audits")
@@ -148,7 +287,18 @@ export async function runAudit(
     .select("id")
     .single();
 
-  if (claimError) return { ok: false, error: claimError.message };
+  if (claimError) {
+    // 23505 = unique_violation on `audits_one_running_per_target_idx`. Two
+    // requests raced past the check above; the loser reports the same thing
+    // the check would have.
+    if (claimError.code === "23505") {
+      return {
+        ok: false,
+        error: "An audit is already running for this website and device.",
+      };
+    }
+    return { ok: false, error: claimError.message };
+  }
   const auditId = claimed.id;
 
   // ------------------------------------------------------------- run it
@@ -239,42 +389,16 @@ export async function runAudit(
     if (updateError) throw updateError;
 
     // ----------------------------------------------------------- findings
-    // Findings are replaced per run rather than accumulated: Lighthouse reports
-    // the complete current state of the page every time, so a finding absent
-    // from this run has genuinely been resolved.
-    await supabase
-      .from("issues")
-      .delete()
-      .eq("website_id", websiteId)
-      .eq("provider", "pagespeed");
-
-    if (mapped.findings.length > 0) {
-      const rows: TablesInsert<"issues">[] = mapped.findings.map((finding) => ({
-        website_id: websiteId,
-        audit_id: auditId,
-        owner_id: user.id,
-        provider: "pagespeed" as const,
-        rule_id: finding.ruleId,
-        title: finding.title.slice(0, 200),
-        description: finding.description.slice(0, 2000),
-        // Lighthouse folds the fix guidance into its description, so there is
-        // no separate recommendation to store. Leaving it empty is honest;
-        // paraphrasing it would be inventing advice Google did not give.
-        recommendation: "",
-        severity: finding.severity,
-        category: finding.category,
-        status: "open" as const,
-        kind: finding.kind,
-        display_value: finding.displayValue?.slice(0, 200) ?? null,
-        savings_ms: finding.savingsMs,
-        score_impact: Math.min(100, Math.max(0, finding.scoreImpact)),
-        affected_pages: finding.affectedResources.slice(0, 25),
-        found_at: completedAt.toISOString(),
-      }));
-
-      const { error: issuesError } = await supabase.from("issues").insert(rows);
-      if (issuesError) throw issuesError;
-    }
+    const reconcileError = await reconcileFindings({
+      supabase,
+      websiteId,
+      ownerId: user.id,
+      auditId,
+      strategy,
+      findings: mapped.findings,
+      at: completedAt.toISOString(),
+    });
+    if (reconcileError) throw reconcileError;
 
     await supabase
       .from("websites")
@@ -315,29 +439,21 @@ export async function runAudit(
 }
 
 /**
- * Marks runs abandoned by a crashed request as failed.
+ * Resolves runs abandoned by a crashed request, on demand.
  *
- * Called opportunistically when the workspace loads, so a stuck spinner
- * resolves itself rather than needing manual intervention.
+ * `runAudit` already reaps before claiming, so this exists for the case where
+ * a user has a stuck row and is not about to start another run — the audits
+ * list offers it as a "clear" action. Reading is unaffected either way: the
+ * mapper presents an over-age `running` row as failed regardless.
  */
-export async function reapStaleAudits(): Promise<ActionResult> {
+export async function releaseAbandonedRuns(): Promise<ActionResult> {
   const user = await getUser();
   if (!user) return { ok: false, error: "You need to be signed in." };
 
-  const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
   const supabase = await createClient();
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
 
-  const { error } = await supabase
-    .from("audits")
-    .update({
-      status: "failed",
-      failure_reason: "The audit did not finish. Run it again.",
-      error_code: "abandoned",
-    })
-    .eq("status", "running")
-    .lt("started_at", cutoff);
-
-  if (error) return { ok: false, error: error.message };
+  await releaseStaleRuns(supabase, cutoff);
 
   revalidatePath("/", "layout");
   return { ok: true };

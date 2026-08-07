@@ -1,5 +1,6 @@
 import { healthScore } from "@/lib/scores";
 import { initialsFrom } from "@/lib/format";
+import { STALE_RUNNING_MS } from "@/lib/audit/limits";
 import type {
   AuditRow,
   IssueRow,
@@ -86,7 +87,19 @@ function fieldFrom(row: AuditListRow): FieldVitals | null {
 }
 
 export function toAudit(row: AuditListRow): Audit {
-  const completed = row.status === "completed";
+  /*
+   * A run still marked `running` long past the provider timeout did not
+   * finish — the process handling it died. Presenting it as failed is an
+   * inference from a fact, not an invention, and it stops the UI showing a
+   * spinner that would never resolve. The row itself is corrected in the
+   * database the next time an audit runs, or on demand from the audits list.
+   */
+  const abandoned =
+    row.status === "running" &&
+    Date.now() - new Date(row.started_at).getTime() > STALE_RUNNING_MS;
+
+  const status: Audit["status"] = abandoned ? "failed" : row.status;
+  const completed = status === "completed";
 
   const scores: Scores = completed
     ? {
@@ -100,7 +113,7 @@ export function toAudit(row: AuditListRow): Audit {
   return {
     id: row.id,
     websiteId: row.website_id,
-    status: row.status,
+    status,
     trigger: row.trigger,
     device: row.device,
     provider: row.provider,
@@ -128,8 +141,10 @@ export function toAudit(row: AuditListRow): Audit {
     issuesFound: row.issues_found,
     passedChecks: row.passed_checks,
     totalChecks: row.total_checks,
-    failureReason: row.failure_reason ?? undefined,
-    errorCode: row.error_code ?? undefined,
+    failureReason: abandoned
+      ? "The audit did not finish. Run it again."
+      : (row.failure_reason ?? undefined),
+    errorCode: abandoned ? "abandoned" : (row.error_code ?? undefined),
   };
 }
 

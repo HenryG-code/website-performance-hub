@@ -23,11 +23,22 @@
   /* Text */
   --color-foreground: #e8eef9;
   --color-muted-foreground: #93a3c0;
-  --color-subtle-foreground: #64748b;
+  /*
+    Lightened from #64748b, which measured 4.13:1 on the page background and
+    only 3.9:1 on elevated surfaces — below the WCAG AA 4.5:1 floor for body
+    text. This clears 5:1 on every surface it is used on while staying
+    visibly quieter than `muted-foreground`.
+  */
+  --color-subtle-foreground: #8090ab;
 
   /* Brand / interactive */
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2f74e8;
+  /*
+    Darkened from #3b82f6, which gave white button text only 3.68:1. Primary
+    buttons are the most important controls in the product and must clear AA;
+    this measures 5.13:1.
+  */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
   --color-primary-soft: #16294a;
   --color-primary-foreground: #ffffff;
   --color-accent: #38bdf8;
@@ -141,6 +152,31 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: #38496e;
+  }
+}
+
+/*
+  Respect the operating-system reduced-motion setting.
+
+  Animations are collapsed rather than removed: Radix's presence layer and the
+  toast timers key off elements actually being rendered, and `animation: none`
+  can suppress the `animationend` event they rely on. A 1ms duration keeps the
+  event firing while removing all perceptible movement. `!important` is needed
+  to beat Tailwind's utility specificity.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* The score gauge animates its stroke; land it on the final value at once. */
+  circle {
+    transition: none !important;
   }
 }
 

@@ -403,15 +403,34 @@ reaches a running application.
 npm test
 ```
 
-121 tests across five suites:
+160 tests across eight suites, none of which touch the network:
 
 | Suite | Covers |
 | --- | --- |
-| `security/url-guard.test.ts` | Private ranges, loopback, metadata endpoints, schemes, credentials, DNS-shaped inputs |
+| `security/url-guard.test.ts` | Private ranges, loopback, metadata endpoints, schemes, credentials |
+| `security/safe-redirect.test.ts` | Open-redirect defence, including protocol-relative and backslash bypasses |
 | `pagespeed/map.test.ts` | Score conversion, lab metrics, CrUX scope and CLS rescaling, finding classification, severity, score-impact maths |
 | `pagespeed/client.test.ts` | Request shape, key handling, every provider error path, timeout, key never leaking into messages |
 | `audit/limits.test.ts` | Duplicate runs, cooldown, hourly and daily caps, precedence |
+| `audit/reconcile.test.ts` | Triage preserved across re-runs, regressions reopened, disappeared findings resolved, nothing deleted |
+| `data/mappers.test.ts` | Abandoned runs presented as failed, last-good scores retained after a failure, field data never borrowing from lab, 0ms treated as measured |
 | `actions/audits.test.ts` | Authorisation, cross-account refusal, SSRF refusal, missing-key refusal |
+
+### Live checks
+
+```bash
+npm run test:live
+```
+
+Kept separate because they call Google and real DNS, cost quota, and take a
+couple of minutes. They catch what fixtures cannot — provider drift, and
+whether the DNS resolution step in the SSRF guard actually runs:
+
+- every category, metric and finding for weblytics.co.za, sinoplant.co.za and
+  bwts.co.za on **both** mobile and desktop
+- lab and field data staying separate, with no lab value substituted when
+  Google reports no field data
+- hostnames that resolve to loopback or private addresses being refused
 
 The mapper tests assert on fixtures shaped exactly like real v5 payloads,
 including the CrUX convention of sending CLS multiplied by 100 — a detail that
@@ -440,6 +459,60 @@ not code:
 - Accessible names on every icon-only control
 - Password fields have a labelled show/hide toggle and correct `autocomplete`
   values, so managers offer the right credential
+
+---
+
+## Production behaviour
+
+**A run takes 10-60 seconds and holds the request open.** There is no job queue:
+the server action calls Google, waits, stores the result, and only then
+responds. The button says so before you click and while it waits. Auditing
+several sites runs them one after another for the same reason.
+
+**A failed run never destroys a good one.** Failures are stored as their own
+audit row with a reason and error code. The website keeps showing the scores
+from its last successful run, labelled as such, so nothing silently goes stale
+or drops to zero.
+
+**A crashed run cannot get stuck.** If the process handling a run dies, its row
+would stay `running` forever. Three things prevent that mattering:
+
+1. reads present a run older than the provider timeout as failed, so the UI
+   never shows a spinner that cannot resolve;
+2. the next run of that website reclaims the row before starting;
+3. the audits list offers a manual "clear" for a workspace that is not about to
+   run anything.
+
+**Only one live run per website and strategy.** Enforced by a partial unique
+index, not just an application check, so two browser tabs cannot both start one.
+
+**Re-running preserves your triage.** Findings are reconciled, not replaced: a
+rule that still fails keeps the status you gave it, one that stops being
+reported is marked resolved, and a resolved rule that regresses reopens.
+Findings are scoped to a strategy, so a desktop run never resolves a
+mobile-only finding.
+
+---
+
+## Troubleshooting PageSpeed errors
+
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| *Audits not configured* | `PAGESPEED_API_KEY` is unset | Add it to `.env.local` and restart the dev server |
+| *The PageSpeed API key was rejected* | Key is wrong, or the PageSpeed Insights API is not enabled on the project | Re-check the key; enable the API under **APIs & Services → Library** |
+| *The daily PageSpeed quota has been used up* | Project quota exhausted | Wait for the reset (midnight Pacific), or raise the quota in Google Cloud |
+| *PageSpeed rate limit reached* | Too many requests too quickly | Wait a minute. Auditing many sites already runs sequentially |
+| *Google could not load that URL* | The page returned an error, blocked the crawler, or is not publicly reachable | Open the URL in a private window; check for bot protection or auth walls |
+| *Lighthouse could not analyse the page* | The page loaded but Lighthouse aborted | Usually a redirect loop or a very slow origin. Retry once |
+| *The audit took longer than 90s* | Provider timeout | Retry. Persistently slow origins may never complete |
+| *This website was audited moments ago* | 60-second per-site cooldown | Wait; results barely move minute to minute |
+| *An audit is already running…* | A run is in flight for this site and strategy | Wait for it, or clear an abandoned run from the audits list |
+| *That URL redirected to a private address* | The site redirects somewhere internal | Expected for staging behind a VPN; not auditable |
+| *The audit did not finish* | The process handling the run died | Run it again |
+
+Errors shown to users never contain the API key, raw provider payloads, or
+server internals — provider messages are translated, and the mapping is
+covered by tests.
 
 ---
 
