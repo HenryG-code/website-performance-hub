@@ -418,8 +418,8 @@ export default function WebsiteDetailPage({
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="text-sm text-muted-foreground">
-            You can restore the full demo dataset at any time from the account
-            menu.
+            This permanently removes this website and its audit history from
+            your workspace.
           </DialogBody>
           <DialogFooter>
             <Button

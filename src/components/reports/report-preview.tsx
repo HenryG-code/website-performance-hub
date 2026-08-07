@@ -363,7 +363,7 @@ export function ReportPreview({ data }: { data: ReportData }) {
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-4 sm:px-8">
         <p className="flex items-center gap-1.5 text-[11px] text-subtle-foreground">
           <TriangleAlert className="size-3.5" />
-          Generated from local demo data — figures are illustrative.
+          Generated from Google PageSpeed Insights audit results. Lab and field data remain distinct where available.
         </p>
         <p className="text-[11px] text-subtle-foreground">
           PerformanceHub · {formatDate(data.generatedAt)}

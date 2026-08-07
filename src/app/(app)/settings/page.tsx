@@ -168,7 +168,7 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Preferences for this workspace. Everything here is stored locally in your browser — no account or sign-in required."
+        description="Preferences for your signed-in workspace, stored securely with your private account."
       />
 
       <div className="grid gap-6 xl:grid-cols-3">
