@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   Bell,
   Database,
-  DatabaseZap,
   Info,
   Loader2,
   Save,
@@ -27,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/shared/page-header";
 import { useAppStore } from "@/lib/store/app-store";
+import { SimulatedDataPanel } from "@/components/settings/simulated-data-panel";
 import { profileSchema } from "@/lib/validation";
 import type {
   Device,
@@ -81,13 +81,12 @@ const NOTIFICATION_ORDER = Object.keys(
 ) as (keyof NotificationPreferences)[];
 
 export default function SettingsPage() {
-  const { state, updateSettings, seedDemoData, canSeedDemoData } = useAppStore();
+  const { state, updateSettings } = useAppStore();
   const { toast } = useToast();
 
   const [profile, setProfile] = React.useState<UserProfile>(state.settings.profile);
   const [profileError, setProfileError] = React.useState<string | null>(null);
   const [savingProfile, setSavingProfile] = React.useState(false);
-  const [seeding, setSeeding] = React.useState(false);
 
   // The form edits a local draft. If the stored profile is replaced underneath
   // it — a reset, or a save from another tab — discard the draft and start
@@ -159,27 +158,6 @@ export default function SettingsPage() {
         : {
             tone: "warning",
             title: "Couldn't save that setting",
-            description: result.error,
-          },
-    );
-  }
-
-  async function handleSeed() {
-    setSeeding(true);
-    const result = await seedDemoData();
-    setSeeding(false);
-
-    toast(
-      result.ok
-        ? {
-            tone: "success",
-            title: "Demo data added",
-            description:
-              "Eight sample websites with audit history are now in your workspace.",
-          }
-        : {
-            tone: "warning",
-            title: "Couldn't add demo data",
             description: result.error,
           },
     );
@@ -468,31 +446,16 @@ export default function SettingsPage() {
                 {state.issues.length} finding
                 {state.issues.length === 1 ? "" : "s"}.
               </p>
-              {canSeedDemoData ? (
-                <p className="text-subtle-foreground">
-                  Development build: you can load a sample dataset to explore the
-                  dashboard. This is unavailable in production.
-                </p>
-              ) : null}
+              <p className="text-subtle-foreground">
+                Audits are measured by Google PageSpeed Insights.{" "}
+                {state.auditsConfigured
+                  ? "The API key is configured."
+                  : "No API key is configured, so new audits cannot be run."}
+              </p>
             </CardContent>
-            {canSeedDemoData ? (
-              <CardFooter>
-                <Button
-                  variant="outline"
-                  onClick={handleSeed}
-                  className="w-full"
-                  disabled={seeding}
-                >
-                  {seeding ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <DatabaseZap />
-                  )}
-                  {seeding ? "Adding demo data…" : "Load demo data"}
-                </Button>
-              </CardFooter>
-            ) : null}
           </Card>
+
+          <SimulatedDataPanel initialCounts={state.simulatedRowCounts} />
         </div>
       </div>
     </div>
