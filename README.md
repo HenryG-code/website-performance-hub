@@ -451,6 +451,60 @@ not code:
 
 ---
 
+## Screenshots
+
+Not committed. Every screen worth showing — the dashboard, a website's score
+history, an audit's lab-versus-field panel — renders one account's private
+audit data, and the three reference sites (weblytics.co.za, sinoplant.co.za,
+bwts.co.za) belong to real clients. Committing those images would publish
+client performance data to a public repository.
+
+To generate a set locally:
+
+```bash
+npm run dev
+```
+
+Sign in, then capture at 1440×900 and 390×844:
+
+| Screen | Path | Worth showing |
+| --- | --- | --- |
+| Dashboard | `/` | Health gauge, four category cards, real-user data, trend |
+| Websites | `/websites` | Table and card views, filters |
+| Website detail | `/websites/[id]` | Score history, lab vs field, findings by category |
+| Audit detail | `/audits/[id]` | Provenance badges, Core Web Vitals, passed checks |
+| Issues | `/issues` | Severity ordering, inline status |
+| Sign in | `/sign-in` | Split layout, no session needed |
+
+Redact the website names and URLs before publishing anything from a real
+account.
+
+---
+
+## Brand and app identity
+
+| Asset | Source | Serves at |
+| --- | --- | --- |
+| Favicon | `src/app/icon.svg` | `/icon.svg` |
+| Apple touch icon | `src/app/apple-icon.tsx` | `/apple-icon` (180×180 PNG) |
+| Link preview card | `src/app/opengraph-image.tsx` | `/opengraph-image` (1200×630 PNG) |
+| Web manifest | `src/app/manifest.ts` | `/manifest.webmanifest` |
+
+Icons and the preview card are **generated from the same brand tokens the app
+uses**, not committed as binaries, so a colour change cannot leave a stale PNG
+behind. The mark is an activity pulse on the blue-to-sky gradient, drawn on a
+filled tile so it stays legible at 16px against light or dark browser chrome.
+
+All four are public routes. They are fetched by clients that can never hold a
+session — link unfurlers, iOS, the browser loading the manifest — so the auth
+middleware allows them explicitly while everything else stays gated. There is a
+test for that classification in both directions.
+
+`robots` is `noindex, nofollow`: every page sits behind authentication and shows
+one user's private data, so there is nothing worth indexing.
+
+---
+
 ## Accessibility
 
 - Skip-to-content link, landmark regions, `aria-current` on active nav items
@@ -459,6 +513,16 @@ not code:
 - Accessible names on every icon-only control
 - Password fields have a labelled show/hide toggle and correct `autocomplete`
   values, so managers offer the right credential
+- `prefers-reduced-motion` collapses animation to 1ms rather than removing it,
+  because Radix waits for `animationend` before unmounting an overlay and
+  `animation: none` would leave dialogs on screen
+- Pinch-zoom is not capped (`maximumScale: 5`), which WCAG 1.4.4 requires
+
+Text contrast is measured, not assumed. Every text node is checked against its
+computed background — including raised surfaces, where a token can pass on the
+page background and fail on a card. Both failures found this way (the primary
+button at 3.68:1 and muted small print at 4.13:1) were fixed by moving the
+token, not by patching one component.
 
 ---
 

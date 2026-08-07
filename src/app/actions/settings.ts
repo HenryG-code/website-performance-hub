@@ -55,8 +55,8 @@ export async function updateNotifications(input: unknown): Promise<ActionResult>
       ...(patch.criticalIssues !== undefined && {
         notify_critical_issues: patch.criticalIssues,
       }),
-      ...(patch.uptimeIncidents !== undefined && {
-        notify_uptime_incidents: patch.uptimeIncidents,
+      ...(patch.auditFailed !== undefined && {
+        notify_audit_failed: patch.auditFailed,
       }),
       ...(patch.scoreDrops !== undefined && {
         notify_score_drops: patch.scoreDrops,

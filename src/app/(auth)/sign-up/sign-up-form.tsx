@@ -39,6 +39,7 @@ export function SignUpForm() {
             autoComplete="name"
             placeholder="Alex Rivera"
             aria-invalid={Boolean(errors.fullName)}
+            inputSize="lg"
             autoFocus
           />
         </Field>
@@ -51,6 +52,7 @@ export function SignUpForm() {
             autoComplete="email"
             placeholder="you@company.com"
             aria-invalid={Boolean(errors.email)}
+            inputSize="lg"
           />
         </Field>
 

@@ -37,7 +37,12 @@ export default function AuthLayout({
           <Logo />
         </Link>
 
-        <div className="flex flex-1 items-center justify-center py-10">
+        {/*
+          Anchored near the top on phones and centred from `sm` up. Centring in
+          a tall, narrow viewport pushed the form most of a screen down, and it
+          also jumps when the on-screen keyboard opens.
+        */}
+        <div className="flex flex-1 items-start justify-center pt-6 pb-10 sm:items-center sm:pt-10">
           <div className="w-full max-w-sm">{children}</div>
         </div>
 
@@ -57,8 +62,9 @@ export default function AuthLayout({
               Know exactly how healthy every website you manage is.
             </h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              PerformanceHub brings audit scores, uptime and outstanding issues
-              for your whole portfolio into a single dashboard.
+              Audit scores, Core Web Vitals and outstanding findings for your
+              whole portfolio, in one dashboard — measured by Google PageSpeed
+              Insights, never estimated.
             </p>
           </div>
 

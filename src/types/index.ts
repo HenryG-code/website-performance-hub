@@ -206,7 +206,8 @@ export interface TrendPoint {
 export interface NotificationPreferences {
   auditCompleted: boolean;
   criticalIssues: boolean;
-  uptimeIncidents: boolean;
+  /** A run failed, so the scores currently shown are stale. */
+  auditFailed: boolean;
   weeklyDigest: boolean;
   scoreDrops: boolean;
   productUpdates: boolean;

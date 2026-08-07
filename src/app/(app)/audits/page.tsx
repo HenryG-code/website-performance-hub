@@ -99,7 +99,7 @@ function AuditsView({ initialWebsite }: { initialWebsite: string }) {
         }
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label="Runs in view" value={filtered.length} icon={BarChart3} />
         <StatTile
           label="Average health"

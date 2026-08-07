@@ -233,7 +233,7 @@ export function toSettings(
     notifications: {
       auditCompleted: preferences?.notify_audit_completed ?? true,
       criticalIssues: preferences?.notify_critical_issues ?? true,
-      uptimeIncidents: preferences?.notify_uptime_incidents ?? true,
+      auditFailed: preferences?.notify_audit_failed ?? true,
       scoreDrops: preferences?.notify_score_drops ?? false,
       weeklyDigest: preferences?.notify_weekly_digest ?? true,
       productUpdates: preferences?.notify_product_updates ?? false,

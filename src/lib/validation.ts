@@ -105,7 +105,7 @@ export const profileSchema = z.object({
 export const notificationPreferencesSchema = z.object({
   auditCompleted: z.boolean(),
   criticalIssues: z.boolean(),
-  uptimeIncidents: z.boolean(),
+  auditFailed: z.boolean(),
   scoreDrops: z.boolean(),
   weeklyDigest: z.boolean(),
   productUpdates: z.boolean(),
