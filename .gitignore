@@ -55,8 +55,8 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # ------------------------------------------------------------------ tool state
-# Machine-specific Claude Code permissions; `.claude/launch.json` is shared.
-.claude/settings.local.json
+# Claude Code preferences and launch configuration are machine-specific.
+.claude/
 
 # --------------------------------------------------------------------- scratch
 # Local scratch area — never part of the application source.
