@@ -22,22 +22,39 @@ export type Database = {
       audits: {
         Row: {
           accessibility_score: number | null;
+          analysed_at: string | null;
           best_practices_score: number | null;
           cls: number | null;
           completed_at: string | null;
           created_at: string;
           device: Database["public"]["Enums"]["device_type"];
           duration_ms: number;
+          error_code: string | null;
           failure_reason: string | null;
           fcp: number | null;
+          field_cls: number | null;
+          field_data_available: boolean;
+          field_fcp_ms: number | null;
+          field_inp_ms: number | null;
+          field_lcp_ms: number | null;
+          field_overall_category:
+            | Database["public"]["Enums"]["crux_category"]
+            | null;
+          field_scope: Database["public"]["Enums"]["field_scope"] | null;
+          field_ttfb_ms: number | null;
+          final_url: string | null;
           health_score: number | null;
           id: string;
           inp: number | null;
           issues_found: number;
           lcp: number | null;
+          lighthouse_version: string | null;
           owner_id: string;
           passed_checks: number;
           performance_score: number | null;
+          provider: Database["public"]["Enums"]["audit_provider"];
+          raw_response: Json | null;
+          requested_url: string | null;
           seo_score: number | null;
           speed_index: number | null;
           started_at: string;
@@ -50,22 +67,39 @@ export type Database = {
         };
         Insert: {
           accessibility_score?: number | null;
+          analysed_at?: string | null;
           best_practices_score?: number | null;
           cls?: number | null;
           completed_at?: string | null;
           created_at?: string;
           device?: Database["public"]["Enums"]["device_type"];
           duration_ms?: number;
+          error_code?: string | null;
           failure_reason?: string | null;
           fcp?: number | null;
+          field_cls?: number | null;
+          field_data_available?: boolean;
+          field_fcp_ms?: number | null;
+          field_inp_ms?: number | null;
+          field_lcp_ms?: number | null;
+          field_overall_category?:
+            | Database["public"]["Enums"]["crux_category"]
+            | null;
+          field_scope?: Database["public"]["Enums"]["field_scope"] | null;
+          field_ttfb_ms?: number | null;
+          final_url?: string | null;
           health_score?: number | null;
           id?: string;
           inp?: number | null;
           issues_found?: number;
           lcp?: number | null;
+          lighthouse_version?: string | null;
           owner_id: string;
           passed_checks?: number;
           performance_score?: number | null;
+          provider?: Database["public"]["Enums"]["audit_provider"];
+          raw_response?: Json | null;
+          requested_url?: string | null;
           seo_score?: number | null;
           speed_index?: number | null;
           started_at?: string;
@@ -78,22 +112,39 @@ export type Database = {
         };
         Update: {
           accessibility_score?: number | null;
+          analysed_at?: string | null;
           best_practices_score?: number | null;
           cls?: number | null;
           completed_at?: string | null;
           created_at?: string;
           device?: Database["public"]["Enums"]["device_type"];
           duration_ms?: number;
+          error_code?: string | null;
           failure_reason?: string | null;
           fcp?: number | null;
+          field_cls?: number | null;
+          field_data_available?: boolean;
+          field_fcp_ms?: number | null;
+          field_inp_ms?: number | null;
+          field_lcp_ms?: number | null;
+          field_overall_category?:
+            | Database["public"]["Enums"]["crux_category"]
+            | null;
+          field_scope?: Database["public"]["Enums"]["field_scope"] | null;
+          field_ttfb_ms?: number | null;
+          final_url?: string | null;
           health_score?: number | null;
           id?: string;
           inp?: number | null;
           issues_found?: number;
           lcp?: number | null;
+          lighthouse_version?: string | null;
           owner_id?: string;
           passed_checks?: number;
           performance_score?: number | null;
+          provider?: Database["public"]["Enums"]["audit_provider"];
+          raw_response?: Json | null;
+          requested_url?: string | null;
           seo_score?: number | null;
           speed_index?: number | null;
           started_at?: string;
@@ -121,12 +172,16 @@ export type Database = {
           category: Database["public"]["Enums"]["issue_category"];
           created_at: string;
           description: string;
+          display_value: string | null;
           effort: Database["public"]["Enums"]["effort_level"];
           found_at: string;
           id: string;
+          kind: Database["public"]["Enums"]["finding_kind"];
           owner_id: string;
+          provider: Database["public"]["Enums"]["audit_provider"];
           recommendation: string;
           rule_id: string;
+          savings_ms: number | null;
           score_impact: number;
           severity: Database["public"]["Enums"]["issue_severity"];
           status: Database["public"]["Enums"]["issue_status"];
@@ -140,12 +195,16 @@ export type Database = {
           category: Database["public"]["Enums"]["issue_category"];
           created_at?: string;
           description?: string;
+          display_value?: string | null;
           effort?: Database["public"]["Enums"]["effort_level"];
           found_at?: string;
           id?: string;
+          kind?: Database["public"]["Enums"]["finding_kind"];
           owner_id: string;
+          provider?: Database["public"]["Enums"]["audit_provider"];
           recommendation?: string;
           rule_id: string;
+          savings_ms?: number | null;
           score_impact?: number;
           severity: Database["public"]["Enums"]["issue_severity"];
           status?: Database["public"]["Enums"]["issue_status"];
@@ -159,12 +218,16 @@ export type Database = {
           category?: Database["public"]["Enums"]["issue_category"];
           created_at?: string;
           description?: string;
+          display_value?: string | null;
           effort?: Database["public"]["Enums"]["effort_level"];
           found_at?: string;
           id?: string;
+          kind?: Database["public"]["Enums"]["finding_kind"];
           owner_id?: string;
+          provider?: Database["public"]["Enums"]["audit_provider"];
           recommendation?: string;
           rule_id?: string;
+          savings_ms?: number | null;
           score_impact?: number;
           severity?: Database["public"]["Enums"]["issue_severity"];
           status?: Database["public"]["Enums"]["issue_status"];
@@ -318,11 +381,15 @@ export type Database = {
     };
     Enums: {
       audit_frequency: "hourly" | "daily" | "weekly";
+      audit_provider: "pagespeed" | "simulated";
       audit_status: "queued" | "running" | "completed" | "failed";
       audit_trigger: "scheduled" | "manual";
+      crux_category: "FAST" | "AVERAGE" | "SLOW" | "NONE";
       device_type: "desktop" | "mobile";
       effort_level: "low" | "medium" | "high";
       environment_type: "production" | "staging";
+      field_scope: "url" | "origin";
+      finding_kind: "opportunity" | "diagnostic";
       issue_category:
         | "performance"
         | "seo"
