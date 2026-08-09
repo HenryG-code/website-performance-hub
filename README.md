@@ -52,8 +52,16 @@ Fill in from **Supabase dashboard → Project Settings → API**:
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project API URL | Yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable ("anon") key | Yes |
-| `NEXT_PUBLIC_SITE_URL` | Origin used in confirmation and reset emails | Yes |
+| `NEXT_PUBLIC_SITE_URL` | Canonical origin, used for Open Graph image URLs | Recommended |
 | `PAGESPEED_API_KEY` | Google PageSpeed Insights API key | Yes, to run audits |
+
+**Auth emails no longer depend on `NEXT_PUBLIC_SITE_URL`.** Confirmation and
+password-reset links are built from the origin the request actually arrived on
+(`src/lib/supabase/request-origin.ts`). A typo in the variable once pointed
+every reset link at a domain that did not resolve, and the only people affected
+were the ones who could not sign in to report it. The variable still sets
+`metadataBase` for link previews, so it is worth getting right — but it can no
+longer lock anyone out.
 
 The Supabase anon key is safe in the browser: it grants no privileges of its
 own, and every table is protected by RLS. **The service-role key is never used
@@ -571,6 +579,37 @@ rule that still fails keeps the status you gave it, one that stops being
 reported is marked resolved, and a resolved rule that regresses reopens.
 Findings are scoped to a strategy, so a desktop run never resolves a
 mobile-only finding.
+
+---
+
+## Troubleshooting password reset
+
+Reset emails have two moving parts, and only one of them lives in this repo.
+
+**The link in the email** is built from the request origin, so it always points
+at whichever domain the user was on. Nothing to configure.
+
+**Supabase must allow that destination.** It refuses any `redirect_to` that is
+not on the project's allow-list and silently falls back to the Site URL
+instead — the user lands on `/` rather than `/reset-password`. In
+**Authentication → URL Configuration** set:
+
+- **Site URL:** `https://performancehub.weblytics.co.za`
+- **Redirect URLs:** `https://performancehub.weblytics.co.za/**`
+
+The wildcard also covers preview deployments if you add
+`https://*-your-team.vercel.app/**`.
+
+| Symptom | Cause |
+| --- | --- |
+| No email arrives at all | Supabase's built-in mailer is capped at a few messages per hour. Check **Authentication → Logs** for a `/recover` request; if it is there, the send was rate-limited or went to spam |
+| Link lands on `/` instead of the reset form | `redirect_to` is not on the allow-list, so Supabase fell back to the Site URL |
+| Link opens "This link has expired" | Reset links are single-use and expire after an hour |
+| Link goes to a domain that does not load | Pre-fix behaviour; resolved by deriving the origin from the request |
+
+For real volume, replace the built-in mailer with SMTP under
+**Authentication → Emails**. Resend's free tier (3,000/month) is enough, and
+verifying the sending domain fixes spam placement.
 
 ---
 
