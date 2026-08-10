@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { siteUrl } from "@/lib/supabase/env";
+import { authRedirectOrigin } from "@/lib/supabase/request-origin";
 import { safeNextPath } from "@/lib/security/safe-redirect";
 import {
   fieldErrors,
@@ -62,7 +62,7 @@ export async function signUp(
     options: {
       // Read by the `handle_new_user` trigger to seed the profile row.
       data: { full_name: parsed.data.fullName },
-      emailRedirectTo: `${siteUrl()}/auth/callback`,
+      emailRedirectTo: `${await authRedirectOrigin()}/auth/callback`,
     },
   });
 
@@ -98,7 +98,7 @@ export async function requestPasswordReset(
 
   const supabase = await createClient();
   await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${siteUrl()}/auth/callback?next=/reset-password`,
+    redirectTo: `${await authRedirectOrigin()}/auth/callback?next=/reset-password`,
   });
 
   // Always reports success, even for an unknown address — otherwise this form
