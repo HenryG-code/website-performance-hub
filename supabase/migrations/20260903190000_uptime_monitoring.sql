@@ -109,6 +109,12 @@ create index uptime_incidents_owner_detected_idx
 alter table public.uptime_monitors enable row level security;
 alter table public.uptime_daily enable row level security;
 alter table public.uptime_incidents enable row level security;
+
+-- Tables created after Supabase's initial bootstrap do not automatically inherit
+-- the application-role grants. RLS below still limits every row to its owner.
+grant select, insert, update, delete on public.uptime_monitors to authenticated;
+grant select on public.uptime_daily to authenticated;
+grant select on public.uptime_incidents to authenticated;
 alter table public.uptime_monitors force row level security;
 alter table public.uptime_daily force row level security;
 alter table public.uptime_incidents force row level security;
