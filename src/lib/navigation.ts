@@ -3,6 +3,7 @@ import {
   Bug,
   FileText,
   Globe,
+  HeartPulse,
   LayoutDashboard,
   Settings2,
   type LucideIcon,
@@ -29,6 +30,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Websites",
     icon: Globe,
     description: "Every site you monitor",
+  },
+  {
+    href: "/uptime",
+    label: "Uptime",
+    icon: HeartPulse,
+    description: "Availability and incidents",
   },
   {
     href: "/audits",

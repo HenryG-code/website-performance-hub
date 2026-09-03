@@ -1,0 +1,6 @@
+project_id = "tmvqfotyjedwluiszxiw"
+
+[functions.uptime-check]
+# The hourly pg_cron request is authenticated by UPTIME_CRON_SECRET in the
+# handler. Supabase's user-JWT check is intentionally off for this worker.
+verify_jwt = false

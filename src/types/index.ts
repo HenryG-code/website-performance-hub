@@ -48,6 +48,49 @@ export interface Website {
   monitoringSince: string;
 }
 
+/** Reachability measured by the uptime prober, separate from PageSpeed health. */
+export type UptimeState = "pending" | "up" | "degraded" | "down" | "paused";
+
+export interface UptimeMonitor {
+  id: string;
+  websiteId: string;
+  enabled: boolean;
+  intervalMinutes: number;
+  timeoutMs: number;
+  expectedStatusMin: number;
+  expectedStatusMax: number;
+  state: UptimeState;
+  lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
+  lastStatusCode: number | null;
+  lastResponseMs: number | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  nextCheckAt: string | null;
+}
+
+/** One compact availability roll-up for a monitor and UTC calendar day. */
+export interface UptimeDaily {
+  monitorId: string;
+  day: string;
+  checkCount: number;
+  successCount: number;
+  responseSampleCount: number;
+  responseTotalMs: number;
+  responseMinMs: number | null;
+  responseMaxMs: number | null;
+  lastCheckedAt: string;
+}
+
+export interface UptimeIncident {
+  id: string;
+  monitorId: string;
+  detectedAt: string;
+  recoveredAt: string | null;
+  initialError: string;
+  finalStatusCode: number | null;
+}
+
 export type AuditStatus = "completed" | "running" | "failed" | "queued";
 
 export type AuditTrigger = "scheduled" | "manual";
@@ -254,6 +297,9 @@ export interface AppState {
   websites: Website[];
   audits: Audit[];
   issues: Issue[];
+  uptimeMonitors: UptimeMonitor[];
+  uptimeDaily: UptimeDaily[];
+  uptimeIncidents: UptimeIncident[];
   trends: Record<string, TrendPoint[]>;
   settings: Settings;
   /** True when PAGESPEED_API_KEY is configured on the server. */

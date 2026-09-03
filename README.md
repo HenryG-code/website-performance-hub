@@ -115,6 +115,55 @@ npm run dev
 
 Open <http://localhost:3000>, create an account, and add your first website.
 
+### Enable hourly uptime monitoring
+
+Uptime is measured by a Supabase Edge Function, not inferred from a PageSpeed
+audit. This keeps availability checks quick and lets the Vercel Hobby deployment
+stay free of an hourly scheduler.
+
+1. Deploy the included `uptime-check` Edge Function:
+
+   ```bash
+   npx supabase functions deploy uptime-check --project-ref tmvqfotyjedwluiszxiw
+   ```
+2. Create a long random `UPTIME_CRON_SECRET` in **Edge Functions → Secrets**.
+3. In the SQL editor, store that exact same value in Vault and schedule the
+   function (replace the placeholders):
+
+```sql
+select vault.create_secret('YOUR_RANDOM_SECRET', 'uptime_cron_secret');
+select vault.create_secret('https://YOUR_PROJECT_REF.supabase.co', 'project_url');
+
+select cron.schedule(
+  'performancehub-hourly-uptime',
+  '5 * * * *',
+  $$
+    select net.http_post(
+      url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+        || '/functions/v1/uptime-check',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'apikey',
+        (select decrypted_secret from vault.decrypted_secrets where name = 'publishable_key'),
+        'x-uptime-cron-secret',
+        (select decrypted_secret from vault.decrypted_secrets where name = 'uptime_cron_secret')
+      ),
+      body := '{}'::jsonb
+    );
+  $$
+);
+```
+
+Store your project publishable key in Vault first:
+
+```sql
+select vault.create_secret('YOUR_SUPABASE_PUBLISHABLE_KEY', 'publishable_key');
+```
+
+Enable only the websites you want checked on the new **Uptime** page. Each
+hourly sweep records a lightweight HTTP result. Two consecutive failures open a
+confirmed outage; the next success closes it.
+
 ### Scripts
 
 | Script | What it does |
@@ -643,8 +692,9 @@ covered by tests.
   becomes a concern. A queue with webhook completion is the next step.
 - **No scheduled audits.** `audit_frequency` is stored and shown in Settings but
   nothing acts on it yet; every run is manual.
-- **No uptime monitoring.** Removed rather than simulated. Reinstating it needs
-  a real prober and an `uptime_checks` table.
+- **One probe region.** Uptime reflects reachability from the Supabase worker,
+  not a multi-region SLA. An outage is confirmed after two consecutive hourly
+  failures, so durations are estimated between checks.
 - **Findings carry no separate recommendation.** Lighthouse folds its guidance
   into the audit description, which is stored and displayed verbatim; the
   `recommendation` column is left empty rather than paraphrasing advice Google
@@ -663,9 +713,8 @@ covered by tests.
 **Next — scale and scheduling.** Move audit execution to a queue with webhook
 completion, and drive scheduled runs from the stored `audit_frequency`.
 
-**Then — monitoring and delivery.** A real uptime prober with its own table;
-the notification service behind the existing preference toggles; PDF and CSV
-report export.
+**Then — delivery.** Email, Slack and webhook delivery behind the existing
+notification preferences; PDF and CSV report export.
 
 **Later — collaboration.** Teams and shared workspaces, which is where the
 single-owner RLS model becomes membership-based. Public report links. Billing.

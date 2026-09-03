@@ -22,6 +22,7 @@ import type {
   AuditStatus,
   IssueCategory,
   IssueStatus,
+  UptimeState,
   Severity,
   WebsiteStatus,
 } from "@/types";
@@ -160,6 +161,48 @@ export function WebsiteStatusBadge({
     <Badge tone={SITE_STATUS_TONE[status]} size={size}>
       <Icon className="size-3" />
       {SITE_STATUS_LABEL[status]}
+    </Badge>
+  );
+}
+
+const UPTIME_STATUS_TONE: Record<UptimeState, Tone> = {
+  pending: "info",
+  up: "success",
+  degraded: "warning",
+  down: "danger",
+  paused: "neutral",
+};
+
+const UPTIME_STATUS_LABEL: Record<UptimeState, string> = {
+  pending: "Awaiting check",
+  up: "Online",
+  degraded: "Check failed",
+  down: "Offline",
+  paused: "Paused",
+};
+
+export function UptimeStatusBadge({
+  status,
+  size = "md",
+}: {
+  status: UptimeState;
+  size?: BadgeProps["size"];
+}) {
+  const Icon =
+    status === "up"
+      ? CheckCircle2
+      : status === "down"
+        ? XCircle
+        : status === "degraded"
+          ? TriangleAlert
+          : status === "pending"
+            ? Clock
+            : CirclePause;
+
+  return (
+    <Badge tone={UPTIME_STATUS_TONE[status]} size={size}>
+      <Icon className={cn("size-3", status === "pending" && "animate-pulse")} />
+      {UPTIME_STATUS_LABEL[status]}
     </Badge>
   );
 }

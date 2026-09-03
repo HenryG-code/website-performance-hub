@@ -6,6 +6,9 @@ import type {
   IssueRow,
   ProfileRow,
   ReportPreferencesRow,
+  UptimeDailyRow,
+  UptimeIncidentRow,
+  UptimeMonitorRow,
   WebsiteRow,
 } from "@/types/database";
 import type {
@@ -15,6 +18,9 @@ import type {
   Issue,
   Scores,
   Settings,
+  UptimeDaily,
+  UptimeIncident,
+  UptimeMonitor,
   WebVitals,
   Website,
 } from "@/types";
@@ -214,6 +220,51 @@ export function toWebsite(row: WebsiteRow, auditsForSite: Audit[]): Website {
     lastAuditAt: latestCompleted?.startedAt ?? "",
     lastFailure,
     monitoringSince: row.created_at,
+  };
+}
+
+export function toUptimeMonitor(row: UptimeMonitorRow): UptimeMonitor {
+  return {
+    id: row.id,
+    websiteId: row.website_id,
+    enabled: row.enabled,
+    intervalMinutes: row.interval_minutes,
+    timeoutMs: row.timeout_ms,
+    expectedStatusMin: row.expected_status_min,
+    expectedStatusMax: row.expected_status_max,
+    state: row.state,
+    lastCheckedAt: row.last_checked_at,
+    lastSuccessAt: row.last_success_at,
+    lastStatusCode: row.last_status_code,
+    lastResponseMs: row.last_response_ms,
+    lastError: row.last_error,
+    consecutiveFailures: row.consecutive_failures,
+    nextCheckAt: row.next_check_at,
+  };
+}
+
+export function toUptimeDaily(row: UptimeDailyRow): UptimeDaily {
+  return {
+    monitorId: row.monitor_id,
+    day: row.day,
+    checkCount: row.check_count,
+    successCount: row.success_count,
+    responseSampleCount: row.response_sample_count,
+    responseTotalMs: row.response_total_ms,
+    responseMinMs: row.response_min_ms,
+    responseMaxMs: row.response_max_ms,
+    lastCheckedAt: row.last_checked_at,
+  };
+}
+
+export function toUptimeIncident(row: UptimeIncidentRow): UptimeIncident {
+  return {
+    id: row.id,
+    monitorId: row.monitor_id,
+    detectedAt: row.detected_at,
+    recoveredAt: row.recovered_at,
+    initialError: row.initial_error,
+    finalStatusCode: row.final_status_code,
   };
 }
 

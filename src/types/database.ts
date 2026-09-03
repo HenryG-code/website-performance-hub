@@ -336,6 +336,165 @@ export type Database = {
         };
         Relationships: [];
       };
+      uptime_daily: {
+        Row: {
+          check_count: number;
+          day: string;
+          last_checked_at: string;
+          monitor_id: string;
+          owner_id: string;
+          response_max_ms: number | null;
+          response_min_ms: number | null;
+          response_sample_count: number;
+          response_total_ms: number;
+          success_count: number;
+        };
+        Insert: {
+          check_count?: number;
+          day: string;
+          last_checked_at: string;
+          monitor_id: string;
+          owner_id: string;
+          response_max_ms?: number | null;
+          response_min_ms?: number | null;
+          response_sample_count?: number;
+          response_total_ms?: number;
+          success_count?: number;
+        };
+        Update: {
+          check_count?: number;
+          day?: string;
+          last_checked_at?: string;
+          monitor_id?: string;
+          owner_id?: string;
+          response_max_ms?: number | null;
+          response_min_ms?: number | null;
+          response_sample_count?: number;
+          response_total_ms?: number;
+          success_count?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "uptime_daily_monitor_owner_fkey";
+            columns: ["monitor_id", "owner_id"];
+            isOneToOne: false;
+            referencedRelation: "uptime_monitors";
+            referencedColumns: ["id", "owner_id"];
+          },
+        ];
+      };
+      uptime_incidents: {
+        Row: {
+          created_at: string;
+          detected_at: string;
+          final_status_code: number | null;
+          id: string;
+          initial_error: string;
+          monitor_id: string;
+          owner_id: string;
+          recovered_at: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          detected_at?: string;
+          final_status_code?: number | null;
+          id?: string;
+          initial_error?: string;
+          monitor_id: string;
+          owner_id: string;
+          recovered_at?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          detected_at?: string;
+          final_status_code?: number | null;
+          id?: string;
+          initial_error?: string;
+          monitor_id?: string;
+          owner_id?: string;
+          recovered_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "uptime_incidents_monitor_owner_fkey";
+            columns: ["monitor_id", "owner_id"];
+            isOneToOne: false;
+            referencedRelation: "uptime_monitors";
+            referencedColumns: ["id", "owner_id"];
+          },
+        ];
+      };
+      uptime_monitors: {
+        Row: {
+          consecutive_failures: number;
+          created_at: string;
+          enabled: boolean;
+          expected_status_max: number;
+          expected_status_min: number;
+          id: string;
+          interval_minutes: number;
+          last_checked_at: string | null;
+          last_error: string | null;
+          last_response_ms: number | null;
+          last_status_code: number | null;
+          last_success_at: string | null;
+          next_check_at: string | null;
+          owner_id: string;
+          state: Database["public"]["Enums"]["uptime_monitor_state"];
+          timeout_ms: number;
+          updated_at: string;
+          website_id: string;
+        };
+        Insert: {
+          consecutive_failures?: number;
+          created_at?: string;
+          enabled?: boolean;
+          expected_status_max?: number;
+          expected_status_min?: number;
+          id?: string;
+          interval_minutes?: number;
+          last_checked_at?: string | null;
+          last_error?: string | null;
+          last_response_ms?: number | null;
+          last_status_code?: number | null;
+          last_success_at?: string | null;
+          next_check_at?: string | null;
+          owner_id: string;
+          state?: Database["public"]["Enums"]["uptime_monitor_state"];
+          timeout_ms?: number;
+          updated_at?: string;
+          website_id: string;
+        };
+        Update: {
+          consecutive_failures?: number;
+          created_at?: string;
+          enabled?: boolean;
+          expected_status_max?: number;
+          expected_status_min?: number;
+          id?: string;
+          interval_minutes?: number;
+          last_checked_at?: string | null;
+          last_error?: string | null;
+          last_response_ms?: number | null;
+          last_status_code?: number | null;
+          last_success_at?: string | null;
+          next_check_at?: string | null;
+          owner_id?: string;
+          state?: Database["public"]["Enums"]["uptime_monitor_state"];
+          timeout_ms?: number;
+          updated_at?: string;
+          website_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "uptime_monitors_website_owner_fkey";
+            columns: ["website_id", "owner_id"];
+            isOneToOne: false;
+            referencedRelation: "websites";
+            referencedColumns: ["id", "owner_id"];
+          },
+        ];
+      };
       websites: {
         Row: {
           created_at: string;
@@ -380,7 +539,25 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      claim_due_uptime_monitors: {
+        Args: { p_limit?: number };
+        Returns: {
+          expected_status_max: number;
+          expected_status_min: number;
+          monitor_id: string;
+          target_url: string;
+          timeout_ms: number;
+        }[];
+      };
+      record_uptime_check: {
+        Args: {
+          p_error?: string | null;
+          p_monitor_id: string;
+          p_response_ms?: number | null;
+          p_status_code?: number | null;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       audit_frequency: "hourly" | "daily" | "weekly";
@@ -401,6 +578,7 @@ export type Database = {
         | "security";
       issue_severity: "critical" | "high" | "medium" | "low";
       issue_status: "open" | "in_progress" | "resolved" | "ignored";
+      uptime_monitor_state: "pending" | "up" | "degraded" | "down" | "paused";
       website_status: "operational" | "degraded" | "down" | "paused";
     };
     CompositeTypes: {
@@ -429,3 +607,6 @@ export type AuditRow = Tables<"audits">;
 export type IssueRow = Tables<"issues">;
 export type ProfileRow = Tables<"profiles">;
 export type ReportPreferencesRow = Tables<"report_preferences">;
+export type UptimeMonitorRow = Tables<"uptime_monitors">;
+export type UptimeDailyRow = Tables<"uptime_daily">;
+export type UptimeIncidentRow = Tables<"uptime_incidents">;

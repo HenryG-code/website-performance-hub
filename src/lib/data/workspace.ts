@@ -3,7 +3,15 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { hasApiKey } from "@/lib/pagespeed/client";
 import { trendsByWebsite } from "@/lib/derive/trends";
-import { toAudit, toIssue, toSettings, toWebsite } from "./mappers";
+import {
+  toAudit,
+  toIssue,
+  toSettings,
+  toUptimeDaily,
+  toUptimeIncident,
+  toUptimeMonitor,
+  toWebsite,
+} from "./mappers";
 import type { AppState, Audit, Website } from "@/types";
 
 /**
@@ -37,6 +45,9 @@ export async function getWorkspace(
     prefsResult,
     simulatedAuditsResult,
     simulatedIssuesResult,
+    uptimeMonitorsResult,
+    uptimeDailyResult,
+    uptimeIncidentsResult,
   ] = await Promise.all([
     supabase.from("websites").select("*").order("created_at", { ascending: false }),
     supabase
@@ -59,6 +70,19 @@ export async function getWorkspace(
       .from("issues")
       .select("id", { count: "exact", head: true })
       .eq("provider", "simulated"),
+    supabase.from("uptime_monitors").select("*").order("created_at"),
+    // Daily roll-ups are intentionally capped at 90 days. This is enough for
+    // the 24h/7d/30d views while keeping the shared app payload small.
+    supabase
+      .from("uptime_daily")
+      .select("*")
+      .gte("day", new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10))
+      .order("day", { ascending: true }),
+    supabase
+      .from("uptime_incidents")
+      .select("*")
+      .order("detected_at", { ascending: false })
+      .limit(100),
   ]);
 
   const firstError =
@@ -66,7 +90,10 @@ export async function getWorkspace(
     auditsResult.error ??
     issuesResult.error ??
     profileResult.error ??
-    prefsResult.error;
+    prefsResult.error ??
+    uptimeMonitorsResult.error ??
+    uptimeDailyResult.error ??
+    uptimeIncidentsResult.error;
 
   if (firstError) {
     throw new Error(`Could not load your workspace: ${firstError.message}`);
@@ -89,6 +116,9 @@ export async function getWorkspace(
     websites,
     audits,
     issues: (issuesResult.data ?? []).map(toIssue),
+    uptimeMonitors: (uptimeMonitorsResult.data ?? []).map(toUptimeMonitor),
+    uptimeDaily: (uptimeDailyResult.data ?? []).map(toUptimeDaily),
+    uptimeIncidents: (uptimeIncidentsResult.data ?? []).map(toUptimeIncident),
     trends: trendsByWebsite(
       websites.map((website) => website.id),
       audits,

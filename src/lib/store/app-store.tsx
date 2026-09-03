@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { createWebsite, deleteWebsite, updateWebsite } from "@/app/actions/websites";
 import { runAudit as runAuditAction } from "@/app/actions/audits";
+import { setUptimeMonitoring as setUptimeMonitoringAction } from "@/app/actions/uptime";
 import { setIssueStatus as setIssueStatusAction } from "@/app/actions/issues";
 import {
   updateNotifications,
@@ -35,6 +36,7 @@ interface AppStoreValue {
     strategy: Device,
   ) => Promise<ActionResult<{ auditId: string }>>;
   isAuditing: (websiteId: string) => boolean;
+  setUptimeMonitoring: (websiteId: string, enabled: boolean) => Promise<ActionResult>;
   setIssueStatus: (id: string, status: IssueStatus) => Promise<ActionResult>;
   updateSettings: (patch: SettingsPatch) => Promise<ActionResult>;
 }
@@ -156,6 +158,15 @@ export function AppStoreProvider({
     [runningSites],
   );
 
+  const setUptimeMonitoring = useCallback(
+    async (websiteId: string, enabled: boolean) => {
+      const result = await setUptimeMonitoringAction({ websiteId, enabled });
+      if (result.ok) refresh();
+      return result;
+    },
+    [refresh],
+  );
+
   const setIssueStatus = useCallback(
     async (id: string, status: IssueStatus) => {
       setStatusOverrides((prev) => ({ ...prev, [id]: status }));
@@ -223,6 +234,7 @@ export function AppStoreProvider({
       removeWebsite,
       runAudit,
       isAuditing,
+      setUptimeMonitoring,
       setIssueStatus,
       updateSettings,
     }),
@@ -234,6 +246,7 @@ export function AppStoreProvider({
       removeWebsite,
       runAudit,
       isAuditing,
+      setUptimeMonitoring,
       setIssueStatus,
       updateSettings,
     ],
