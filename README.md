@@ -145,6 +145,8 @@ select cron.schedule(
         'Content-Type', 'application/json',
         'apikey',
         (select decrypted_secret from vault.decrypted_secrets where name = 'publishable_key'),
+        'Authorization',
+        'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'publishable_key'),
         'x-uptime-cron-secret',
         (select decrypted_secret from vault.decrypted_secrets where name = 'uptime_cron_secret')
       ),
