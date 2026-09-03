@@ -91,7 +91,7 @@ export default function DashboardPage() {
 
   if (state.websites.length === 0) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <PageHeader
           title="Dashboard"
           description="Track performance, SEO, accessibility and best practices across every website you manage."
@@ -116,7 +116,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Website health overview"
         description="One place to see how every site you manage is performing, where it is losing ground, and what to fix first."

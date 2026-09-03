@@ -16,7 +16,7 @@ import {
   FilterSelect,
   SearchInput,
 } from "@/components/shared/filters";
-import { IssueTable } from "@/components/issues/issue-table";
+import { IssueCards, IssueTable } from "@/components/issues/issue-table";
 import { IssueDetailSheet } from "@/components/issues/issue-detail-sheet";
 import { useAppStore } from "@/lib/store/app-store";
 import {
@@ -119,7 +119,7 @@ function IssuesView({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Issues"
         description="Every finding raised by an audit, ranked by severity. Update status as your team works through them — changes are saved locally."
@@ -228,14 +228,24 @@ function IssuesView({
         </Card>
       ) : (
         <>
-          <Card className="overflow-hidden">
-            <IssueTable
-              issues={filtered.slice(0, visible)}
-              websites={state.websites}
-              onSelect={(issue) => setSelectedId(issue.id)}
-              onStatusChange={handleStatusChange}
-            />
-          </Card>
+          <>
+            <div className="md:hidden">
+              <IssueCards
+                issues={filtered.slice(0, visible)}
+                websites={state.websites}
+                onSelect={(issue) => setSelectedId(issue.id)}
+                onStatusChange={handleStatusChange}
+              />
+            </div>
+            <Card className="hidden overflow-hidden md:block">
+              <IssueTable
+                issues={filtered.slice(0, visible)}
+                websites={state.websites}
+                onSelect={(issue) => setSelectedId(issue.id)}
+                onStatusChange={handleStatusChange}
+              />
+            </Card>
+          </>
 
           {visible < filtered.length ? (
             <div className="flex justify-center">

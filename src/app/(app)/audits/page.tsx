@@ -15,7 +15,7 @@ import {
   FilterSelect,
   SearchInput,
 } from "@/components/shared/filters";
-import { AuditTable } from "@/components/audits/audit-table";
+import { AuditCards, AuditTable } from "@/components/audits/audit-table";
 import { RunAuditButton } from "@/components/dashboard/run-audit-button";
 import { useAppStore } from "@/lib/store/app-store";
 import { formatDuration } from "@/lib/format";
@@ -84,7 +84,7 @@ function AuditsView({ initialWebsite }: { initialWebsite: string }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Audits"
         description="Every audit run across your portfolio, including scheduled sweeps and the ones you triggered by hand."
@@ -183,12 +183,14 @@ function AuditsView({ initialWebsite }: { initialWebsite: string }) {
         </Card>
       ) : (
         <>
-          <Card className="overflow-hidden">
-            <AuditTable
-              audits={filtered.slice(0, visible)}
-              websites={state.websites}
-            />
-          </Card>
+          <>
+            <div className="md:hidden">
+              <AuditCards audits={filtered.slice(0, visible)} websites={state.websites} />
+            </div>
+            <Card className="hidden overflow-hidden md:block">
+              <AuditTable audits={filtered.slice(0, visible)} websites={state.websites} />
+            </Card>
+          </>
 
           {visible < filtered.length ? (
             <div className="flex justify-center">

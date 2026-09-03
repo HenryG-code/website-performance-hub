@@ -144,3 +144,73 @@ export function IssueTable({
     </TableScroller>
   );
 }
+
+/** Compact cards preserve the priority and next action without table scrolling. */
+export function IssueCards({
+  issues,
+  websites,
+  onSelect,
+  onStatusChange,
+}: {
+  issues: Issue[];
+  websites: Website[];
+  onSelect: (issue: Issue) => void;
+  onStatusChange: (issue: Issue, status: IssueStatus) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {issues.map((issue) => {
+        const website = websites.find((w) => w.id === issue.websiteId);
+
+        return (
+          <article key={issue.id} className="rounded-card border border-border bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => onSelect(issue)}
+                className="min-w-0 text-left"
+              >
+                <span className="block truncate text-sm font-medium text-foreground">
+                  {issue.title}
+                </span>
+                <span className="mt-1 flex items-center gap-2 text-xs text-subtle-foreground">
+                  <SiteAvatar
+                    name={website?.name ?? "Unknown"}
+                    initials={website?.initials ?? "??"}
+                    size="sm"
+                  />
+                  <span className="truncate">{website?.name ?? "Unknown website"}</span>
+                </span>
+              </button>
+              <SeverityBadge severity={issue.severity} size="sm" />
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+              <span className="min-w-0">
+                <span className="block"><CategoryBadge category={issue.category} size="sm" /></span>
+                <span className="mt-1 block font-mono text-[11px] text-subtle-foreground">
+                  +{issue.scoreImpact} pts · {formatRelative(issue.foundAt)}
+                </span>
+              </span>
+              <Select
+                value={issue.status}
+                onValueChange={(value) => onStatusChange(issue, value as IssueStatus)}
+              >
+                <SelectTrigger className="h-9 w-32 text-xs" aria-label={`Status for ${issue.title}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ISSUE_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {STATUS_LABELS[status]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}

@@ -22,10 +22,21 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { useAppStore } from "@/lib/store/app-store";
 import { monitorForWebsite, uptimeWindow } from "@/lib/derive/uptime";
-import { displayUrl, formatMs, formatRelative } from "@/lib/format";
+import {
+  displayUrl,
+  formatDateTime,
+  formatDuration,
+  formatMs,
+  formatRelative,
+} from "@/lib/format";
 
 function formatAvailability(value: number | null): string {
   return value === null ? "—" : `${value.toFixed(value === 100 ? 0 : 2)}%`;
+}
+
+function outageDuration(detectedAt: string, recoveredAt: string | null): string {
+  if (!recoveredAt) return "Ongoing";
+  return formatDuration(Math.max(0, new Date(recoveredAt).getTime() - new Date(detectedAt).getTime()));
 }
 
 export default function UptimePage() {
@@ -50,6 +61,13 @@ export default function UptimePage() {
   const portfolioAvailability = allThirtyDay.checks
     ? (allThirtyDay.successes / allThirtyDay.checks) * 100
     : null;
+  const recentIncidents = [...state.uptimeIncidents]
+    .sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime())
+    .slice(0, 8)
+    .map((incident) => ({
+      incident,
+      monitor: monitors.find((monitor) => monitor.id === incident.monitorId),
+    }));
 
   async function toggle(websiteId: string, active: boolean) {
     setPendingIds((ids) => [...ids, websiteId]);
@@ -72,13 +90,13 @@ export default function UptimePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Uptime monitoring"
         description="Hourly reachability checks from one probe region. A site is confirmed offline after two consecutive failed checks."
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Uptime summary">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Uptime summary">
         <StatTile
           label="Active monitors"
           value={enabled.length}
@@ -116,9 +134,50 @@ export default function UptimePage() {
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <TableScroller>
-            <Table>
+        <>
+          <div className="space-y-3 md:hidden">
+            {state.websites.map((website) => {
+              const monitor = monitorForWebsite(monitors, website.id);
+              const window = uptimeWindow(state.uptimeDaily, monitor?.id, 30);
+              const pending = pendingIds.includes(website.id);
+              const stateValue = monitor?.state ?? "paused";
+
+              return (
+                <Card key={website.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <Link href={`/websites/${website.id}`} className="flex min-w-0 items-center gap-3">
+                      <SiteAvatar name={website.name} initials={website.initials} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-foreground">{website.name}</span>
+                        <span className="block truncate text-xs text-subtle-foreground">{displayUrl(website.url)}</span>
+                      </span>
+                    </Link>
+                    <Switch
+                      checked={monitor?.enabled ?? false}
+                      disabled={pending}
+                      onCheckedChange={(active) => void toggle(website.id, active)}
+                      aria-label={`${monitor?.enabled ? "Pause" : "Enable"} uptime monitoring for ${website.name}`}
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                    <UptimeStatusBadge status={stateValue} size="sm" />
+                    <span className="text-xs text-subtle-foreground">
+                      {monitor?.lastCheckedAt ? formatRelative(monitor.lastCheckedAt) : "Not checked"}
+                    </span>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                    <div><dt className="text-subtle-foreground">Uptime</dt><dd className="mt-1 font-mono text-foreground">{formatAvailability(window.availability)}</dd></div>
+                    <div><dt className="text-subtle-foreground">Response</dt><dd className="mt-1 font-mono text-foreground">{formatMs(monitor?.lastResponseMs)}</dd></div>
+                    <div><dt className="text-subtle-foreground">Status</dt><dd className="mt-1 font-mono text-foreground">{monitor?.lastStatusCode ?? "—"}</dd></div>
+                  </dl>
+                </Card>
+              );
+            })}
+          </div>
+
+          <Card className="hidden overflow-hidden md:block">
+            <TableScroller>
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Website</TableHead>
@@ -182,10 +241,44 @@ export default function UptimePage() {
                   );
                 })}
               </TableBody>
-            </Table>
-          </TableScroller>
-        </Card>
+              </Table>
+            </TableScroller>
+          </Card>
+        </>
       )}
+
+      <section aria-labelledby="outage-history" className="space-y-3">
+        <div>
+          <h2 id="outage-history" className="text-base font-semibold text-foreground">Outage history</h2>
+          <p className="mt-1 text-xs text-subtle-foreground">
+            Times are UTC. An outage begins after two failed hourly checks and ends on the next successful check.
+          </p>
+        </div>
+        {recentIncidents.length === 0 ? (
+          <Card className="p-4 text-sm text-subtle-foreground">No confirmed outages have been recorded.</Card>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {recentIncidents.map(({ incident, monitor }) => {
+              const website = state.websites.find((site) => site.id === monitor?.websiteId);
+              return (
+                <Card key={incident.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{website?.name ?? "Removed website"}</p>
+                      <p className="mt-1 text-xs text-subtle-foreground">
+                        {formatDateTime(incident.detectedAt)}
+                        {incident.recoveredAt ? ` → ${formatDateTime(incident.recoveredAt)}` : " → still offline"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 font-mono text-xs text-danger">{outageDuration(incident.detectedAt, incident.recoveredAt)}</span>
+                  </div>
+                  <p className="mt-3 truncate border-t border-border pt-3 text-xs text-subtle-foreground">{incident.initialError}</p>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <p className="text-xs text-subtle-foreground">
         Availability is calculated from completed checks, not inferred from PageSpeed audits. Outage duration is estimated between checks.

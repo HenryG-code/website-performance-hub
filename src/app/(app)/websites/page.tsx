@@ -128,13 +128,13 @@ export default function WebsitesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Websites"
         description="Every property you monitor, with its current health score, measured server response and outstanding findings."
         actions={
           <>
-            <Tabs value={view} onValueChange={(value) => setView(value as typeof view)}>
+            <Tabs className="hidden md:block" value={view} onValueChange={(value) => setView(value as typeof view)}>
               <TabsList>
                 <TabsTrigger value="table" aria-label="Table view">
                   <List />
@@ -222,12 +222,17 @@ export default function WebsitesPage() {
             }
           />
         </Card>
-      ) : view === "table" ? (
-        <Card className="overflow-hidden">
-          <WebsiteTable rows={rows} />
-        </Card>
       ) : (
-        <WebsiteCards rows={rows} />
+        <>
+          <div className="md:hidden"><WebsiteCards rows={rows} /></div>
+          <div className="hidden md:block">
+            {view === "table" ? (
+              <Card className="overflow-hidden"><WebsiteTable rows={rows} /></Card>
+            ) : (
+              <WebsiteCards rows={rows} />
+            )}
+          </div>
+        </>
       )}
     </div>
   );
