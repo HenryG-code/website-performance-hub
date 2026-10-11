@@ -47,6 +47,12 @@ describe("isPrivateIpv6", () => {
     "ff02::1", // multicast
     "::ffff:127.0.0.1", // IPv4-mapped loopback
     "::ffff:10.1.2.3", // IPv4-mapped private
+    "::ffff:7f00:1", // canonical hex IPv4-mapped loopback
+    "0:0:0:0:0:ffff:a00:1", // expanded IPv4-mapped private
+    "64:ff9b::a00:1", // NAT64
+    "2002:a00:1::", // 6to4 private destination
+    "2001:db8::1", // documentation
+    "2001::1", // Teredo/special-use
   ])("rejects %s", (address) => {
     expect(isPrivateIpv6(address)).toBe(true);
   });

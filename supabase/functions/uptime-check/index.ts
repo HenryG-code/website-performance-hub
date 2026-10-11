@@ -1,4 +1,5 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkTarget } from "../_shared/http-probe.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.112.2";
 
 type DueMonitor = {
   monitor_id: string;
@@ -8,66 +9,7 @@ type DueMonitor = {
   expected_status_max: number;
 };
 
-type CheckResult = {
-  statusCode: number | null;
-  responseMs: number | null;
-  error: string | null;
-};
-
 const MAX_MONITORS_PER_RUN = 25;
-
-/**
- * A deliberately small prober: GET, no redirect following, and no response
- * body retained. A 2xx/3xx response means the target is reachable; redirects
- * are not followed so a changed target cannot turn this into an SSRF pivot.
- */
-async function checkTarget(monitor: DueMonitor): Promise<CheckResult> {
-  let url: URL;
-  try {
-    url = new URL(monitor.target_url);
-  } catch {
-    return { statusCode: null, responseMs: null, error: "Invalid monitor URL." };
-  }
-
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase())
-  ) {
-    return { statusCode: null, responseMs: null, error: "Unsafe monitor URL." };
-  }
-
-  const started = performance.now();
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      redirect: "manual",
-      signal: AbortSignal.timeout(monitor.timeout_ms),
-      headers: {
-        "User-Agent": "PerformanceHub-Uptime/1.0",
-        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
-      },
-    });
-    // Availability monitoring has no need for a page body. Releasing it keeps
-    // memory and egress use low even when the target sends a large response.
-    await response.body?.cancel();
-
-    return {
-      statusCode: response.status,
-      responseMs: Math.round(performance.now() - started),
-      error: null,
-    };
-  } catch (error) {
-    const isTimeout = error instanceof DOMException && error.name === "TimeoutError";
-    return {
-      statusCode: null,
-      responseMs: null,
-      error: isTimeout ? "Request timed out." : "Network request failed.",
-    };
-  }
-}
 
 Deno.serve(async (request) => {
   const secret = Deno.env.get("UPTIME_CRON_SECRET");

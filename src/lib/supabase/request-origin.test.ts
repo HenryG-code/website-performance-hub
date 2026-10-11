@@ -1,113 +1,80 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * These cover the regression that took password reset down in production: a
- * typo in `NEXT_PUBLIC_SITE_URL` pointed every emailed auth link at a domain
- * that did not resolve. Deriving the origin from the request removes the
- * variable from the critical path entirely.
- */
-
 const headerStore = new Map<string, string>();
-
 vi.mock("next/headers", () => ({
-  headers: async () => ({
-    get: (name: string) => headerStore.get(name.toLowerCase()) ?? null,
-  }),
+  headers: async () => ({ get: (name: string) => headerStore.get(name) ?? null }),
 }));
-
 const { authRedirectOrigin } = await import("./request-origin");
 
-const ORIGINAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
-
 function setHeaders(values: Record<string, string>) {
-  headerStore.clear();
-  for (const [key, value] of Object.entries(values)) {
-    headerStore.set(key.toLowerCase(), value);
-  }
+  for (const [key, value] of Object.entries(values)) headerStore.set(key, value);
 }
 
 beforeEach(() => {
   headerStore.clear();
-  process.env.NEXT_PUBLIC_SITE_URL = "https://configured.example.com";
+  vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://configured.example.com");
+  for (const key of ["AUTH_ALLOWED_ORIGINS", "VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"]) {
+    vi.stubEnv(key, "");
+  }
 });
-
-afterEach(() => {
-  if (ORIGINAL_SITE_URL === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
-  else process.env.NEXT_PUBLIC_SITE_URL = ORIGINAL_SITE_URL;
-});
+afterEach(() => vi.unstubAllEnvs());
 
 describe("authRedirectOrigin", () => {
-  it("uses the host the request actually arrived on", async () => {
+  it("keeps the known production domain working despite a SITE_URL typo", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://performancehub.webletics.co.za");
     setHeaders({ host: "performancehub.weblytics.co.za" });
-
-    expect(await authRedirectOrigin()).toBe(
-      "https://performancehub.weblytics.co.za",
-    );
+    expect(await authRedirectOrigin()).toBe("https://performancehub.weblytics.co.za");
   });
 
-  // The whole point: a wrong environment variable must not be able to break
-  // password reset again.
-  it("ignores a misconfigured NEXT_PUBLIC_SITE_URL", async () => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://performancehub.webletics.co.za";
-    setHeaders({ host: "performancehub.weblytics.co.za" });
-
-    const origin = await authRedirectOrigin();
-
-    expect(origin).toBe("https://performancehub.weblytics.co.za");
-    expect(origin).not.toContain("webletics");
+  it("allows forwarded headers to select a trusted origin", async () => {
+    setHeaders({ host: "internal-router.vercel.app", "x-forwarded-host": "performancehub.weblytics.co.za" });
+    expect(await authRedirectOrigin()).toBe("https://performancehub.weblytics.co.za");
   });
 
-  it("prefers x-forwarded-host when a proxy rewrote the host", async () => {
-    setHeaders({
-      host: "internal-router.vercel.app",
-      "x-forwarded-host": "performancehub.weblytics.co.za",
-    });
-
-    expect(await authRedirectOrigin()).toBe(
-      "https://performancehub.weblytics.co.za",
-    );
-  });
-
-  it("takes the first entry when proxies append to the header", async () => {
-    setHeaders({
-      "x-forwarded-host": "performancehub.weblytics.co.za, inner.vercel.app",
-      "x-forwarded-proto": "https, http",
-    });
-
-    expect(await authRedirectOrigin()).toBe(
-      "https://performancehub.weblytics.co.za",
-    );
-  });
-
-  it("emails preview deployments a link back to themselves", async () => {
-    setHeaders({ host: "website-performance-hub-git-abc.vercel.app" });
-
-    expect(await authRedirectOrigin()).toBe(
-      "https://website-performance-hub-git-abc.vercel.app",
-    );
-  });
-
-  it("uses http for local development", async () => {
-    setHeaders({ host: "localhost:3000" });
-
-    expect(await authRedirectOrigin()).toBe("http://localhost:3000");
-  });
-
-  it("honours an explicit forwarded protocol", async () => {
-    setHeaders({ host: "example.com", "x-forwarded-proto": "http" });
-
-    expect(await authRedirectOrigin()).toBe("http://example.com");
-  });
-
-  it("falls back to the configured value when no host header is present", async () => {
-    setHeaders({});
-
+  it.each([
+    "attacker.example.com", "configured.example.com.attacker.com",
+    "evil.example.com/path", "evil.example.com\\path", "user@configured.example.com",
+    "configured.example.com, attacker.example.com", "localhost:3000",
+  ])("does not trust a supplied host %s", async (host) => {
+    setHeaders({ host, "x-forwarded-host": host });
     expect(await authRedirectOrigin()).toBe("https://configured.example.com");
   });
 
-  it("rejects a host containing a path separator", async () => {
-    setHeaders({ host: "evil.example.com/path" });
+  it("does not let forwarded-proto downgrade a trusted origin", async () => {
+    setHeaders({ host: "configured.example.com", "x-forwarded-proto": "http" });
+    expect(await authRedirectOrigin()).toBe("https://configured.example.com");
+  });
 
+  it("supports the exact deployment domain from Vercel's server environment", async () => {
+    vi.stubEnv("VERCEL_URL", "website-performance-hub-abc.vercel.app");
+    setHeaders({ host: "website-performance-hub-abc.vercel.app" });
+    expect(await authRedirectOrigin()).toBe("https://website-performance-hub-abc.vercel.app");
+  });
+
+  it("supports explicitly trusted extra domains", async () => {
+    vi.stubEnv("AUTH_ALLOWED_ORIGINS", "https://other.example.com, https://extra.example.com");
+    setHeaders({ host: "extra.example.com" });
+    expect(await authRedirectOrigin()).toBe("https://extra.example.com");
+  });
+
+  it.each(["http://attacker.example.com", "https://attacker.example.com/path", "https://user:pass@attacker.example.com"])(
+    "ignores an invalid configured origin %s", async (origin) => {
+      vi.stubEnv("NEXT_PUBLIC_SITE_URL", origin);
+      setHeaders({ host: "attacker.example.com" });
+      expect(await authRedirectOrigin()).toBe("https://performancehub.weblytics.co.za");
+    },
+  );
+
+  it.each(["localhost:3000", "127.0.0.1:3000", "[::1]:3000"])("allows exact loopback %s in development", async (host) => {
+    vi.stubEnv("NODE_ENV", "development");
+    setHeaders({ host });
+    expect(await authRedirectOrigin()).toBe(`http://${host}`);
+  });
+
+  it("does not mistake a localhost prefix for loopback", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    setHeaders({ host: "localhost.attacker.example.com" });
     expect(await authRedirectOrigin()).toBe("https://configured.example.com");
   });
 });

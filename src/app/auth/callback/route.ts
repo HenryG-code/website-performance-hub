@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { safeNextPath } from "@/lib/security/safe-redirect";
+import { authRedirectOrigin } from "@/lib/supabase/request-origin";
 
 /**
  * Landing point for every link Supabase emails out — confirmation and password
@@ -11,15 +13,14 @@ import { createClient } from "@/lib/supabase/server";
  * customised to use `{{ .TokenHash }}` produce `token_hash` + `type`.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+  const origin = await authRedirectOrigin();
 
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
 
-  const rawNext = searchParams.get("next") ?? "/";
-  // Same-origin paths only — never redirect to a URL supplied in the query.
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const next = safeNextPath(searchParams.get("next"));
 
   const supabase = await createClient();
 

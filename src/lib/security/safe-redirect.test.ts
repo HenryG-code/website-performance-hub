@@ -27,6 +27,9 @@ describe("safeNextPath", () => {
     "javascript:alert(1)",
     "data:text/html,<h1>hi",
     "evil.example.com",
+    "/\t/evil.example.com",
+    "/\n/evil.example.com",
+    "/\r/evil.example.com",
   ])("refuses to redirect off-site via %s", (next) => {
     expect(safeNextPath(next)).toBe("/");
   });

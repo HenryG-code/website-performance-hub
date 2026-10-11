@@ -57,6 +57,7 @@ yarn-error.log*
 # ------------------------------------------------------------------ tool state
 # Claude Code preferences and launch configuration are machine-specific.
 .claude/
+supabase/.temp/
 
 # --------------------------------------------------------------------- scratch
 # Local scratch area — never part of the application source.

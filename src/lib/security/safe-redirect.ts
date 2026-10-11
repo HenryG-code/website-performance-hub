@@ -23,6 +23,8 @@ export function safeNextPath(next: string | null | undefined): string {
   // A backslash anywhere in the authority position is normalised to `/` by
   // browsers; refuse rather than try to reason about it.
   if (next.includes("\\")) return "/";
+  // URL parsers strip tabs/newlines before resolving the authority.
+  if ([...next].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return "/";
 
   return next;
 }

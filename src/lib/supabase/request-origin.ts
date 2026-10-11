@@ -3,57 +3,62 @@ import "server-only";
 import { headers } from "next/headers";
 import { siteUrl } from "./env";
 
+const PRODUCTION_ORIGIN = "https://performancehub.weblytics.co.za";
+
+/** Accept exact origins only, with HTTPS except for loopback development. */
+function validatedOrigin(value: string | undefined): string | null {
+  if (!value || /[\\\s,@]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null;
+    if (url.protocol !== "https:" && !(local && url.protocol === "http:" && process.env.NODE_ENV !== "production")) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The origin to build emailed auth links from.
- *
- * Derived from the incoming request rather than `NEXT_PUBLIC_SITE_URL`, because
- * a hand-typed environment variable is a single point of failure for the one
- * flow nobody can work around: a typo in it sends every password-reset and
- * confirmation link to a domain that does not exist, and the only people
- * affected are the ones who cannot get in to report it. That is exactly what
- * happened here — the variable read `webletics` instead of `weblytics`.
- *
- * Using the request origin also means preview deployments email links back to
- * themselves instead of to production.
- *
- * On the host header being trustworthy: Vercel only routes a request to this
- * project when the Host matches a domain assigned to it, so the value cannot be
- * forged in this deployment. Supabase is the second gate regardless — it
- * refuses any `redirect_to` that is not on the project's allow-list, so a
- * poisoned host cannot turn into a working reset link pointed at an attacker.
+ * Request headers select among server-configured origins, never define trust.
+ * The known production origin keeps reset links working even if SITE_URL has
+ * a typo; other custom domains must be listed in AUTH_ALLOWED_ORIGINS.
  */
 export async function authRedirectOrigin(): Promise<string> {
+  const configured = validatedOrigin(siteUrl());
+  const deploymentOrigins = [
+    process.env.VERCEL_URL,
+    process.env.VERCEL_BRANCH_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  ].map((host) => validatedOrigin(host ? `https://${host}` : undefined));
+  const explicitOrigins = (process.env.AUTH_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => validatedOrigin(value.trim()));
+  const allowed = new Set([
+    PRODUCTION_ORIGIN,
+    configured,
+    ...deploymentOrigins,
+    ...explicitOrigins,
+  ].filter((value): value is string => value !== null));
+
   try {
     const requestHeaders = await headers();
-
-    // `x-forwarded-host` is what a proxy rewrites to; `host` is the direct case.
-    const host =
-      requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-
-    if (host) {
-      // A comma-separated chain can appear behind multiple proxies; the first
-      // entry is the origin-facing host.
-      const firstHost = host.split(",")[0].trim();
-
-      // Local development is the only case that is legitimately not HTTPS.
-      const isLocal =
-        firstHost.startsWith("localhost") || firstHost.startsWith("127.0.0.1");
-
-      const forwardedProto = requestHeaders
-        .get("x-forwarded-proto")
-        ?.split(",")[0]
-        .trim();
-
-      const protocol = forwardedProto ?? (isLocal ? "http" : "https");
-
-      if (firstHost.length > 0 && !firstHost.includes("/")) {
-        return `${protocol}://${firstHost}`;
+    for (const host of [requestHeaders.get("x-forwarded-host"), requestHeaders.get("host")]) {
+      if (!host || /[\\\s,/@?#]/.test(host)) continue;
+      // Ignore x-forwarded-proto: it must never downgrade production auth links.
+      const secure = validatedOrigin(`https://${host}`);
+      if (secure && allowed.has(secure)) return secure;
+      if (process.env.NODE_ENV !== "production") {
+        const local = validatedOrigin(`http://${host}`);
+        if (local && ["localhost", "127.0.0.1", "[::1]"].includes(new URL(local).hostname)) {
+          return local;
+        }
       }
     }
   } catch {
-    // `headers()` throws outside a request scope. Fall through to the
-    // configured value so nothing depends on this succeeding.
+    // headers() is unavailable outside a request.
   }
-
-  return siteUrl();
+  return configured ?? deploymentOrigins.find((value) => value !== null) ?? PRODUCTION_ORIGIN;
 }

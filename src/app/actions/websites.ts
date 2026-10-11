@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient, getUser } from "@/lib/supabase/server";
 import { fieldErrors, websiteInputSchema } from "@/lib/validation";
+import { assertPublicUrl } from "@/lib/security/url-guard";
 import type { ActionResult } from "./types";
 
 /** Adds the scheme when the user omitted it, and drops a trailing slash. */
@@ -23,6 +24,9 @@ export async function createWebsite(
   if (!parsed.success) {
     return { ok: false, error: "Check the form.", errors: fieldErrors(parsed.error) };
   }
+
+  const guard = await assertPublicUrl(normaliseUrl(parsed.data.url));
+  if (!guard.ok) return { ok: false, error: guard.message ?? "Enter a public website URL." };
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -66,6 +70,9 @@ export async function updateWebsite(
   if (!parsed.success) {
     return { ok: false, error: "Check the form.", errors: fieldErrors(parsed.error) };
   }
+
+  const guard = await assertPublicUrl(normaliseUrl(parsed.data.url));
+  if (!guard.ok) return { ok: false, error: guard.message ?? "Enter a public website URL." };
 
   const supabase = await createClient();
   // No owner_id filter: RLS restricts the update to rows this user owns, so a
