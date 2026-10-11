@@ -15,3 +15,14 @@ Report vulnerabilities privately through [GitHub's vulnerability reporting form]
 Run `npm ci --ignore-scripts`, `npm audit`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npx deno@2.9.6 check supabase/functions/uptime-check/index.ts` before publishing changes. GitHub Actions runs these checks without production credentials. Dependency alerts and CodeQL provide ongoing detection; a clean scan is not a guarantee that all vulnerabilities are absent.
 
 React, TypeScript, hooks, and accessibility lint checks are configured directly. The Next.js ESLint preset was removed because it pulled in an unpatched vulnerable development-only dependency; keep the replacement plugins updated.
+
+## Supabase advisor recommendations
+
+The `rls_auto_enable()` internal event-trigger helper, when present, must not be executable by `PUBLIC`, `anon`, or `authenticated`. The guarded migration restricts those grants without removing the `ensure_rls` trigger or changing application data.
+
+Two hosting recommendations require a separate operational decision:
+
+- Leaked-password protection is a Supabase Pro-or-higher feature. The current Free project cannot enable it without upgrading. No plan upgrade is performed by these repository changes.
+- `pg_net` powers monitoring and registers in the public schema, but its objects live in the unexposed `net` schema. Keep `net` out of the Data API's exposed schemas. Relocation requires dropping and re-creating the non-relocatable extension; this deletes queued requests and stored HTTP responses and can interrupt webhooks/monitoring. Back up required responses and confirm the queue is empty before an approved maintenance migration. Do not use `DROP ... CASCADE` to clear this warning.
+
+References: [Supabase password security](https://supabase.com/docs/guides/auth/password-security), [pg_net troubleshooting and permissions](https://supabase.com/docs/guides/database/extensions/pg_net).
