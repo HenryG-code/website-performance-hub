@@ -6,14 +6,14 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
     // Inline scripts/styles are required by Next's prerendered pages and the
-    // chart UI. External scripts, framing, plug-ins and off-site forms are blocked.
+    // chart UI. Only the consent-gated Google tag is allowed externally; framing, plug-ins and off-site forms remain blocked.
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""),
+      "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com" + (process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""),
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co" + (process.env.NODE_ENV === "development" ? " ws://localhost:*" : ""),
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://www.google-analytics.com https://region1.google-analytics.com https://www.googletagmanager.com" + (process.env.NODE_ENV === "development" ? " ws://localhost:*" : ""),
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

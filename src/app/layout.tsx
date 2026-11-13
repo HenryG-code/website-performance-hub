@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AnalyticsConsent } from "@/components/analytics-consent";
 import { BaseProviders } from "./providers";
 
 const DESCRIPTION =
@@ -73,7 +74,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-dvh bg-background antialiased">
-        <BaseProviders>{children}</BaseProviders>
+        <BaseProviders>{children}<AnalyticsConsent /></BaseProviders>
       </body>
     </html>
   );
